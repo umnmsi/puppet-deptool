@@ -1,0 +1,99 @@
+#!/usr/bin/env ruby
+
+require 'optparse'
+require 'puppet-deptool'
+
+options = {}
+
+optparser = OptionParser.new do |opts|
+  options[:modules] = []
+  opts.on('-m', '--module MODULE', 'Print dependenecies of MODULE. Can be specified multiple times.') do |mod|
+    options[:modules] << mod
+  end
+  options[:recurse] = false
+  opts.on('-R', '--recurse', 'Recursively determine module dependencies. Defaults to false.') do
+    options[:recurse] = true
+  end
+  options[:restrict_scan] = false
+  opts.on('-r', '--restrict', 'Restrict scanned modules to modules specified with --module. Default false.') do
+    options[:restrict_scan] = true
+  end
+  options[:scan_modules] = []
+  opts.on('-s', '--scan MODULE', 'Add MODULE to list of modules to scan. Defaults to scan all modules if not specified.') do |scan|
+    options[:scan_modules] << scan
+  end
+  options[:envdir] = Dir.pwd
+  opts.on('-e', '--envdir DIR', 'Set environment root directory to DIR. Defaults to current directory.') do |envdir|
+    unless Dir.exist? envdir
+      warn "envdir #{envdir} does not exist"
+      exit 1
+    end
+    options[:envdir] = File.expand_path(envdir)
+  end
+  options[:modulepath] = []
+  opts.on('-p', '--modulepath DIR', 'Set environment modulepath. Can be specified multiple times. Defaults to environment.conf modulepath.') do |modulepath|
+    unless Dir.exist? modulepath
+      warn "modulepath #{modulepath} does not exist"
+      exit 1
+    end
+    options[:modulepath] << File.expand_path(modulepath)
+  end
+  options[:list_dependencies] = false
+  opts.on('-l', '--list-deps', 'Print resolved dependencies.') do
+    options[:list_dependencies] = true
+  end
+  options[:definitions_file] = '.deptool/definitions'
+  opts.on('-f', '--definitions-file', 'Path to file containing parsed definitions. Defaults to .deptool/definitions.') do |path|
+    options[:definitions_file] = path
+  end
+  options[:generate_definitions_file] = false
+  opts.on('-u', '--generate-definitions-file', 'Generate definitions file.') do
+    options[:generate_definitions_file] = true
+  end
+  options[:known_warnings_file] = '.deptool/known_warnings'
+  opts.on('-k', '--known-warnings FILE', 'Path to file containing known warnings to ignore. Defaults to .deptool/known_warnings.') do |path|
+    options[:known_warnings_file] = path
+  end
+  options[:generate_warnings_file] = false
+  opts.on('-g', '--generate-warnings-file', 'Generate known warnings file for all current warnings.') do
+    options[:generate_warnings_file] = true
+  end
+  options[:warnings_ok] = false
+  opts.on('-w', '--warnings-ok', 'Return 0 exit code even if there are warnings. Defaults to false.') do
+    options[:warnings_ok] = true
+  end
+  options[:verbose] = false
+  opts.on('-v', '--verbose', 'Enable verbose output.') do
+    options[:verbose] = true
+  end
+  options[:debug] = false
+  opts.on('-d', '--debug', 'Enable debug output.') do
+    options[:debug] = true
+  end
+  options[:quiet] = false
+  opts.on('-q', '--quiet', 'Disable warning output.') do
+    options[:quiet] = true
+  end
+end
+
+begin
+  optparser.parse!
+rescue => e
+  warn e
+  puts optparser
+  exit 1
+end
+
+unless ARGV.empty?
+  warn "unknown arguments: #{ARGV.join(', ')}"
+  puts optparser
+  exit 1
+end
+
+parser = PuppetDeptool.parser(options)
+parser.scan
+parser.resolve
+parser.list_dependencies if options[:list_dependencies]
+parser.generate_known_warnings if options[:generate_warnings_file]
+parser.generate_definitions if options[:generate_definitions_file]
+exit 1 if parser.warnings_encountered && options[:warnings_ok] == false
