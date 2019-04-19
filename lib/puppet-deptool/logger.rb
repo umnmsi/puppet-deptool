@@ -1,20 +1,23 @@
 module PuppetDeptool
   module Logger
+
+    class << self; attr_accessor :debug, :verbose, :quiet; end
+
     def debug_write(message)
-      STDOUT.write message if @debug
+      STDOUT.write message if Logger.debug
     end
 
     def debug(message)
-      puts message if @debug
+      puts message if Logger.debug
     end
 
     def info(message)
-      puts message if @verbose || @debug
+      puts message if Logger.verbose || Logger.debug
     end
 
     def warn(message)
       @warnings_encountered = true
-      STDERR.puts red message unless @quiet
+      STDERR.puts red message unless Logger.quiet
     end
 
     # Enable printing red text

@@ -3,26 +3,45 @@
 require 'optparse'
 require 'puppet-deptool'
 
+# Default options
 options = {}
+options[:modules] = []
+options[:recurse] = false
+options[:restrict_scan] = false
+options[:scan_modules] = []
+options[:moduledir] = options[:envdir] = Dir.pwd
+options[:modulepath] = []
+options[:use_env_modulepath] = false
+options[:list_dependencies] = false
+options[:state_file] = '.deptool/state'
+options[:use_generated_state] = false
+options[:rescan_listed_modules] = false
+options[:generate_state_file] = false
+options[:known_warnings_file] = '.deptool/known_warnings'
+options[:generate_warnings_file] = false
+options[:update_metadata] = false
+options[:warnings_ok] = false
+options[:verbose] = false
+options[:debug] = false
+options[:quiet] = false
+
+# Set some defaults based on current directory being control repo or module
+#TODO
+
 
 optparser = OptionParser.new do |opts|
-  options[:modules] = []
-  opts.on('-m', '--module MODULE', 'Print dependenecies of MODULE. Can be specified multiple times.') do |mod|
+  opts.on('-m', '--module MODULE', 'Resolve dependenecies of MODULE. Can be specified multiple times.') do |mod|
     options[:modules] << mod
   end
-  options[:recurse] = false
   opts.on('-R', '--recurse', 'Recursively determine module dependencies. Defaults to false.') do
     options[:recurse] = true
   end
-  options[:restrict_scan] = false
   opts.on('-r', '--restrict', 'Restrict scanned modules to modules specified with --module. Default false.') do
     options[:restrict_scan] = true
   end
-  options[:scan_modules] = []
   opts.on('-s', '--scan MODULE', 'Add MODULE to list of modules to scan. Defaults to scan all modules if not specified.') do |scan|
     options[:scan_modules] << scan
   end
-  options[:envdir] = Dir.pwd
   opts.on('-e', '--envdir DIR', 'Set environment root directory to DIR. Defaults to current directory.') do |envdir|
     unless Dir.exist? envdir
       warn "envdir #{envdir} does not exist"
@@ -30,7 +49,6 @@ optparser = OptionParser.new do |opts|
     end
     options[:envdir] = File.expand_path(envdir)
   end
-  options[:modulepath] = []
   opts.on('-p', '--modulepath DIR', 'Set environment modulepath. Can be specified multiple times. Defaults to environment.conf modulepath.') do |modulepath|
     unless Dir.exist? modulepath
       warn "modulepath #{modulepath} does not exist"
@@ -38,39 +56,42 @@ optparser = OptionParser.new do |opts|
     end
     options[:modulepath] << File.expand_path(modulepath)
   end
-  options[:list_dependencies] = false
+  opts.on('-P', '--use-env-modulepath', 'Prepend module paths specified with --modulepath to modulepath in environment.conf') do
+    options[:use_env_modulepath] = true
+  end
   opts.on('-l', '--list-deps', 'Print resolved dependencies.') do
     options[:list_dependencies] = true
   end
-  options[:definitions_file] = '.deptool/definitions'
-  opts.on('-f', '--definitions-file', 'Path to file containing parsed definitions. Defaults to .deptool/definitions.') do |path|
-    options[:definitions_file] = path
+  opts.on('-f', '--state-file FILE', 'Path to file containing parsed state. Defaults to .deptool/state.') do |path|
+    options[:state_file] = path
   end
-  options[:generate_definitions_file] = false
-  opts.on('-u', '--generate-definitions-file', 'Generate definitions file.') do
-    options[:generate_definitions_file] = true
+  opts.on('-u', '--use-generated-state', 'Use generated state file instead of scanning. Defaults to false.') do
+    options[:use_generated_state] = true
   end
-  options[:known_warnings_file] = '.deptool/known_warnings'
+  opts.on('-S', '--rescan-listed-modules', 'Use generated state file but also rescan modules specified with --scan. Implies --use-generated-state. Defaults to false.') do
+    options[:rescan_listed_modules] = options[:use_generated_state] = true
+  end
+  opts.on('-g', '--generate-state-file', 'Generate state file.') do
+    options[:generate_state_file] = true
+  end
   opts.on('-k', '--known-warnings FILE', 'Path to file containing known warnings to ignore. Defaults to .deptool/known_warnings.') do |path|
     options[:known_warnings_file] = path
   end
-  options[:generate_warnings_file] = false
-  opts.on('-g', '--generate-warnings-file', 'Generate known warnings file for all current warnings.') do
+  opts.on('-G', '--generate-warnings-file', 'Generate known warnings file for all current warnings.') do
     options[:generate_warnings_file] = true
   end
-  options[:warnings_ok] = false
+  opts.on('-M', '--update-metadata', 'Update metadata.json with resolved dependencies. Defaults to false.') do
+    options[:update_metadata] = true
+  end
   opts.on('-w', '--warnings-ok', 'Return 0 exit code even if there are warnings. Defaults to false.') do
     options[:warnings_ok] = true
   end
-  options[:verbose] = false
   opts.on('-v', '--verbose', 'Enable verbose output.') do
     options[:verbose] = true
   end
-  options[:debug] = false
   opts.on('-d', '--debug', 'Enable debug output.') do
     options[:debug] = true
   end
-  options[:quiet] = false
   opts.on('-q', '--quiet', 'Disable warning output.') do
     options[:quiet] = true
   end
@@ -91,9 +112,11 @@ unless ARGV.empty?
 end
 
 parser = PuppetDeptool.parser(options)
+parser.info "Parsed options:\n#{options.pretty_inspect}"
 parser.scan
 parser.resolve
 parser.list_dependencies if options[:list_dependencies]
 parser.generate_known_warnings if options[:generate_warnings_file]
-parser.generate_definitions if options[:generate_definitions_file]
+parser.generate_state if options[:generate_state_file]
+parser.update_metadata if options[:update_metadata]
 exit 1 if parser.warnings_encountered && options[:warnings_ok] == false

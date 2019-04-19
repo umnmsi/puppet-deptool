@@ -1,0 +1,54 @@
+#!/usr/bin/env ruby
+
+require 'optparse'
+require 'puppet-deptool'
+
+options = {}
+
+optparser = OptionParser.new do |opts|
+  options[:control_repo] = []
+  opts.on('-c', '--control-repo PATH', 'Path to control repository. Can be specified multiple times. If unspecified, all known control repos will be cloned and checked.') do |control_repo|
+    unless Dir.exist? control_repo
+      warn "Control repo directory #{control_repo} does not exist"
+      exit 1
+    end
+    options[:control_repo] << File.expand_path(control_repo)
+  end
+  options[:module] = File.expand_path(Dir.pwd)
+  opts.on('-m', '--module', 'Set path to module. Defaults to working directory.') do |mod|
+    unless Dir.exist? mod
+      warn "Module directory #{mod} does not exist"
+      exit 1
+    end
+    options[:module] = File.expand_path(mod)
+  end
+  options[:verbose] = false
+  opts.on('-v', '--verbose', 'Enable verbose output.') do
+    options[:verbose] = true
+  end
+  options[:debug] = false
+  opts.on('-d', '--debug', 'Enable debug output.') do
+    options[:debug] = true
+  end
+  options[:quiet] = false
+  opts.on('-q', '--quiet', 'Disable warning output.') do
+    options[:quiet] = true
+  end
+end
+
+begin
+  optparser.parse!
+rescue => e
+  warn e
+  puts optparser
+  exit 1
+end
+
+unless ARGV.empty?
+  warn "unknown arguments: #{ARGV.join(', ')}"
+  puts optparser
+  exit 1
+end
+
+scanner = PuppetDeptool.scanner(options)
+scanner.find_environments
