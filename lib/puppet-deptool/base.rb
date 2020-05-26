@@ -29,7 +29,7 @@ module PuppetDeptool
     attr_accessor :options
 
     def initialize(opts)
-      raise 'options must be a hash' unless opts.is_a? Hash
+      raise 'options must be a hash' unless opts.nil? || opts.is_a?(Hash)
       @options = Options.new(opts)
       Logger.debug = options[:debug] unless opts[:debug].nil?
       Logger.verbose = options[:verbose] unless opts[:verbose].nil?

@@ -5,7 +5,7 @@ module PuppetDeptool
   class Environment < Base
     include Git
 
-    attr_accessor :control_repo, :branch
+    attr_accessor :control_repo, :branch, :puppetfile_path
 
     def initialize(opts)
       super
@@ -13,7 +13,7 @@ module PuppetDeptool
       @control_repo = options[:control_repo]
       raise "Required parameter :branch missing" if opts[:branch].nil?
       @branch = options[:branch]
-      unless options[:skip_check]
+      unless opts[:skip_check]
         raise "Invalid branch #{branch}" unless control_repo.branch_exists?(branch, path: path)
       end
       fetch_puppetfile
@@ -76,17 +76,17 @@ module PuppetDeptool
         warn "WARNING: Failed to find envlink config for control repo #{prefix}"
         links = []
       end
-      info "Found source #{source}, links #{links}"
+      debug "Found source #{source}, links #{links}"
       links.each do |link|
         unless link_source = Util.r10k_config['sources'][link['r10k_source']]
           warn "WARNING: Failed to find r10k config for envlink link #{link['link_name']}"
           next
         end
-        info "Processing link #{link['link_name']}"
+        debug "Processing link #{link['link_name']}"
         link_path = clone_or_update({ 'name' => link['link_name'], 'ssh_url' => link_source['remote'] })
         branch = Util.envlink_branch(link: link, path: link_path, environment: self)
         checkout(branch, path: link_path, clean: true)
-        info "Creating symlink from #{link_path} to #{File.join(path, link['link_name'])}"
+        debug "Creating symlink from #{link_path} to #{File.join(path, link['link_name'])}"
         FileUtils.symlink(link_path, path, force: true)
       end
     end

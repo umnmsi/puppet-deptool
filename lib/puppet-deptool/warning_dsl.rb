@@ -2,7 +2,7 @@ require 'puppet-deptool/base'
 
 # Class for parsing known warnings file
 module PuppetDeptool
-  class DSL < Base
+  class WarningsDSL < Base
 
     def initialize(known_warnings)
       super

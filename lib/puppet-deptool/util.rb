@@ -9,6 +9,27 @@ module PuppetDeptool
       include Git
       include Logger
 
+      @@known_warnings = Hash[WARNING_TYPES.map { |type, _| [type, []] }]
+      @@found_warnings = Hash[WARNING_TYPES.map { |type, _| [type, []] }]
+
+      def known_warnings
+        @@known_warnings
+      end
+
+      def found_warnings
+        @@found_warnings
+      end
+
+      def warning_known?(warning_type, *args)
+        raise "Unknown warning type #{warning_type}" unless @@known_warnings.key? warning_type
+        warning = Hash.new
+        WARNING_TYPES[warning_type].each_with_index do |attr, index|
+          warning[attr] = args[index]
+        end
+        @@found_warnings[warning_type] << warning
+        return true if @@known_warnings[warning_type].any? { |known| warning == known }
+      end
+
       def github_control_repos
         @github_control_repos ||= Github.control_repositories
       end
@@ -22,7 +43,7 @@ module PuppetDeptool
             true
           end
         end
-        info "Found r10k control repositories #{@r10k_control_repos}"
+        debug "Found r10k control repositories #{@r10k_control_repos}"
         @r10k_control_repos
       end
 
@@ -62,15 +83,17 @@ module PuppetDeptool
 
       def environment_to_control_repo(environment)
         r10k_control_repos.each do |control_repo, info|
-          info "Checking #{control_repo} against #{environment}"
+          debug "Checking #{control_repo} against #{environment}"
           if environment.match?(%r{^#{control_repo}_})
-            info "Found match, cloning repo"
+            info "Mapped environment #{environment} to #{control_repo}_control. Cloning repo..."
             unless info['remote'].match?(%r{#{control_repo}_control})
               warn "Control repo URL #{info['remote']} doesn't match expected pattern '<name>_control'"
               return nil
             end
             path = clone_or_update({ 'name' => "#{control_repo}_control", 'ssh_url' => info['remote'] })
-            return PuppetDeptool.control_repo(path: path, prefix: control_repo)
+            repo = PuppetDeptool.control_repo(path: path, prefix: control_repo)
+            repo.checkout_environment(environment)
+            return repo
           end
         end
         nil

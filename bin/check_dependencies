@@ -3,11 +3,17 @@
 require 'puppet-deptool'
 
 parser = PuppetDeptool.parser(parse_args: true)
-parser.info "Parsed options:\n#{parser.options.pretty_inspect}"
+options = parser.options
+parser.info "Parsed options:\n#{options.pretty_inspect}"
+parser.deploy_environment if options[:deploy_environment]
+parser.load_known_warnings
+parser.load_state if options[:use_generated_state]
+parser.validate_state if options[:validate_state]
 parser.scan
 parser.resolve
-parser.list_dependencies if parser.options[:list_dependencies]
-parser.generate_known_warnings if parser.options[:generate_warnings_file]
-parser.generate_state if parser.options[:generate_state_file]
-parser.update_metadata if parser.options[:update_metadata]
-exit 1 if parser.warnings_encountered && parser.options[:warnings_ok] == false
+parser.list_dependencies if options[:list_dependencies]
+parser.generate_known_warnings if options[:generate_warnings_file]
+parser.generate_state if options[:generate_state_file]
+parser.update_metadata if options[:update_metadata]
+parser.update_fixtures if options[:update_fixtures]
+exit 1 if parser.warnings_encountered && options[:warnings_ok] == false

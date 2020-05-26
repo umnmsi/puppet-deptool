@@ -21,6 +21,8 @@ module PuppetDeptool
                   metadata['name'].sub(MODULE_NAME_PATTERN, '\2')
                 elsif File.exist?(File.join(path, 'manifests'))
                   File.basename(path).sub(MODULE_NAME_PATTERN, '\2')
+                else
+                  ''
                 end
     end
 
@@ -62,7 +64,7 @@ module PuppetDeptool
     def metadata
       return @metadata unless @metadata.nil?
       unless File.file?(metadata_path)
-        warn "Missing metadata file #{metadata_path}!"
+        warn "Missing metadata file #{metadata_path}!" unless Util.warning_known?(:missing_metadata, name)
         return @metadata = { 'author' => 'msi', 'version' => '0.0.1' }
       end
       info "Loading metadata from #{metadata_path}"
