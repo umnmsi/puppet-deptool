@@ -1,32 +1,26 @@
-require 'puppet-deptool/consts'
-require 'puppet-deptool/logger'
+require 'puppet-deptool/base'
 
 module PuppetDeptool
-  class Module
-    include Consts
-    include Logger
-
-    NAME_PATTERN = %r{^([^-]+)[-/](.+)$}
+  class Module < Base
+    include Git
 
     attr_accessor :name, :path, :metadata_path, :dependencies
 
-    def initialize(options)
+    def initialize(opts)
+      super
+      raise 'Required parameter :path missing' if opts[:path].nil?
       @path = options[:path]
       @metadata_path = File.join(path, 'metadata.json')
       @dependencies = Hash[DEPENDENCY_TYPES.map { |type| [type, {}] }]
     end
 
-    def is_control_repo?
-      @is_control_repo ||= File.exist?(File.join(path, 'Puppetfile'))
-    end
-
     def name
-      @name ||= if is_control_repo?
+      @name ||= if Util.is_control_repo?(path)
                   File.basename(path)
-                elsif File.exist?(File.join(path, 'metadata.json'))
-                  metadata['name'].sub(NAME_PATTERN, '\2')
+                elsif File.exist?(metadata_path)
+                  metadata['name'].sub(MODULE_NAME_PATTERN, '\2')
                 elsif File.exist?(File.join(path, 'manifests'))
-                  File.basename(path).sub(NAME_PATTERN, '\2')
+                  File.basename(path).sub(MODULE_NAME_PATTERN, '\2')
                 end
     end
 
@@ -34,12 +28,27 @@ module PuppetDeptool
       @version ||= metadata['version']
     end
 
+    def ref
+      return @ref unless @ref.nil?
+      @ref = Dir.chdir(path) do
+        git(['ls-files', '--error-unmatch', path, '>/dev/null 2>&1'])
+        current_commit
+      end
+    rescue GitError => e
+      debug "Failed to get current ref for #{path}: #{e}"
+      @ref = version
+    end
+
     def author
-      @author ||= if m = NAME_PATTERN.match(metadata['name']) || m = NAME_PATTERN.match(File.basename(path))
+      @author ||= if m = MODULE_NAME_PATTERN.match(metadata['name']) || m = MODULE_NAME_PATTERN.match(File.basename(path))
                     m[1]
                   else
                     metadata['author']
                   end
+    end
+
+    def to_s
+      "#{author}-#{name} (#{path})"
     end
 
     def add_dependency(type, name, source)

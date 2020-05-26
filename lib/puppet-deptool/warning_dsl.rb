@@ -1,12 +1,11 @@
-require 'puppet-deptool/consts'
+require 'puppet-deptool/base'
 
 # Class for parsing known warnings file
 module PuppetDeptool
-  class DSL
-
-    include Consts
+  class DSL < Base
 
     def initialize(known_warnings)
+      super
       @known_warnings = known_warnings
     end
 

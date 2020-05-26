@@ -4,10 +4,10 @@ require 'find'
 require 'fileutils'
 require 'pp'
 require 'json'
-require 'puppet-deptool/consts'
+require 'puppet-deptool/base'
 require 'puppet-deptool/dsl'
-require 'puppet-deptool/logger'
 require 'puppet-deptool/module'
+require 'r10k/puppetfile'
 
 module Puppet::Environments
   # Enable Puppet::Environments::StaticDirectory Loaders support
@@ -21,31 +21,22 @@ end
 
 # Parses and resolves module dependencies
 module PuppetDeptool
-  class Parser
-    include Consts
-    include Logger
-
+  class Parser < Base
     attr_accessor :dependencies, :warnings_encountered
 
-    def initialize(options)
-      @options = options
-
-      Logger.debug = options[:debug]
-      Logger.verbose = options[:verbose]
-      Logger.quiet = options[:quiet]
+    def initialize(opts)
+      opts = Parser.default_options.merge(opts)
+      super(opts)
 
       Puppet.settings[:vardir] = '/dev/null'
 
       @environment = Puppet::Node::Environment.create(ENV_NAME, [])
-      @modulepath = options[:modulepath].empty? ? nil : options[:modulepath]
-      @envdir = options[:envdir]
-      @envdir_mod = Module.new(path: @envdir)
-      @moduledir = options[:moduledir]
-      @module = Module.new(path: @moduledir)
+      @basedir = options[:basedir]
+      @module = Module.new(path: @basedir)
 
       validate_options
 
-      @envdir_pn = Pathname.new(@envdir)
+      @env_pn = Pathname.new(@environment_path)
       @parser = Puppet::Pops::Parser::EvaluatingParser.singleton
       @loaders = Puppet::Pops::Loaders.new(@environment, true)
       @dumper = Puppet::Pops::Model::ModelTreeDumper.new
@@ -61,41 +52,81 @@ module PuppetDeptool
 
       load_known_warnings
       collect_builtins
-      load_state if options[:use_generated_state]
+      if options[:use_generated_state]
+        load_state
+        validate_state if options[:validate_state]
+      end
     end
 
     def validate_options
       info "Validating options"
-      if options(:use_generated_state) && !File.file?(options(:state_file))
-        warn "--use-generated-state specified but state file #{options(:state_file)} does not exist. Did you mean to specify --state-file?"
+      if @module.name.empty?
+        warn "basedir #{@basedir} doesn't appear to be a valid module or control repo!"
         exit 1
       end
-      if @envdir_mod.name.empty?
-        warn "envdir #{@envdir} doesn't appear to be an environment or module directory!"
-        exit 1
-      end
-      if !@envdir_mod.is_control_repo? && @modulepath.nil?
-        if File.directory?('spec/fixtures/modules')
-          puts "Found modules directory at spec/fixtures/modules. Path references will be relative to spec/fixtures directory."
-          @envdir = File.expand_path('spec/fixtures')
-          @modulepath = [File.expand_path('spec/fixtures/modules')]
+      if !options[:controldir].nil?
+        @control_repo = PuppetDeptool.control_repo(path: options[:controldir])
+        @environment_path = options[:controldir]
+      elsif Util.is_control_repo?(@basedir)
+        @control_repo = PuppetDeptool.control_repo(path: @basedir)
+        @environment_path = @basedir
+        options[:state_file] ||= File.join(@control_repo.path, PuppetDeptool::DEPTOOL_DIR, 'state')
+        options[:known_warnings_file] ||= File.join(@control_repo.path, PuppetDeptool::DEPTOOL_DIR, 'known_warnings')
+      elsif options[:modulepath].empty? || options[:use_env_modulepath]
+        if File.directory?('spec/fixtures/modules') && !options[:environment]
+          info "Found modules directory at spec/fixtures/modules. Path references will be relative to spec/fixtures directory."
+          @environment_path = File.expand_path('spec/fixtures')
+          options[:modulepath] = [File.expand_path('spec/fixtures/modules')]
         else
-          warn "envdir #{@envdir} doesn't appear to be an environment directory and no modulepath was provided!"
-          exit 1
+          unless options[:environment]
+            warn "No control directory, modulepath or environment was provided!"
+            exit 1
+          end
+          unless @control_repo = Util.environment_to_control_repo(options[:environment])
+            warn "Failed to clone environment #{options[:environment]}"
+            exit 1
+          end
+          if options[:use_generated_state]
+            @control_repo.checkout_environment(options[:environment])
+            options[:state_file] ||= File.join(@control_repo.path, PuppetDeptool::DEPTOOL_DIR, 'state')
+            warn "--use_generated_state was specified, but state file #{options[:state_file]} does not exist in environment #{options[:environment]}. Deploying environment for full scan and resolve."
+            options[:use_generated_state] = false
+            options[:deploy_environment] = true
+          end
+          @environment_path = @control_repo.path
+          options[:known_warnings_file] ||= File.join(@control_repo.path, PuppetDeptool::DEPTOOL_DIR, 'known_warnings')
         end
       end
-      environments = Puppet::Environments::StaticDirectory.new(ENV_NAME, @envdir, @environment)
+      if options[:deploy_environment]
+        raise "--deploy-environment specified but no control repository found" if @control_repo.nil?
+        @control_repo.current_environment.deploy(force: options[:force])
+      end
+      if options[:use_generated_state] && options[:state_file].nil?
+        warn "--use-generated-state specified but no state file defined. Did you mean to specify --state-file?"
+        exit 1
+      end
+      if options[:use_generated_state] && !File.file?(options[:state_file])
+        warn "--use-generated-state specified but state file #{options[:state_file]} does not exist. Did you mean to specify --state-file?"
+        exit 1
+      end
+      if @environment_path.nil?
+        warn "Failed to determine environment path"
+        exit 1
+      end
+      environments = Puppet::Environments::StaticDirectory.new(ENV_NAME, @environment_path, @environment)
       Puppet.push_context(environments: environments, current_environment: @environment)
-      if @modulepath.nil? || options(:use_env_modulepath)
-        info "Adding environment.conf modulepath to @modulepath"
-        @modulepath ||= []
-        @modulepath.concat(Puppet
+
+      # Validate modulepath unless only using generated state
+      return if options[:use_generated_state] && !options[:rescan_listed_modules]
+      if options[:modulepath].empty? || options[:use_env_modulepath]
+        info "Adding environment.conf modulepath to modulepath"
+        options[:modulepath] = options[:modulepath].concat(Puppet
                            .settings
                            .value(:modulepath, Parser::ENV_NAME, true)
                            .split(File::PATH_SEPARATOR)
                            .reject { |path| path.start_with? '$' })
       end
-      @modulepath.each do |path|
+      options[:modulepath].each do |path|
         info "Validating modulepath #{path}"
         unless Dir.exist? path
           warn "modulepath directory #{path} does not exist"
@@ -110,13 +141,12 @@ module PuppetDeptool
     end
 
     def update_metadata
-      control_repo = PuppetDeptool.control_repo(path: options(:envdir))
       mod_deps = dependencies.map do |dep|
         mod = get_module(dep)
-        min_version = if @envdir_mod.is_control_repo?
-                        control_repo.module_version(dep) || mod.version
-                      else
+        min_version = if @control_repo.nil?
                         mod.version
+                      else
+                        @control_repo.module_version(dep) || mod.version
                       end
         max_version = "#{min_version.split('.')[0].to_i + 1}.0.0"
         { 'name' => "#{mod.author}-#{mod.name}", 'version_requirement' => ">= #{min_version} < #{max_version}" }
@@ -125,10 +155,12 @@ module PuppetDeptool
     end
 
     def load_state
-      File.open(options(:state_file), 'r') do |file|
+      info "Loading state file #{options[:state_file]}"
+      File.open(options[:state_file], 'r') do |file|
         modules_to_exclude = ['builtin']
-        modules_to_exclude += options(:scan_modules) if options(:rescan_listed_modules)
+        modules_to_exclude += options[:scan_modules] if options[:rescan_listed_modules]
         state = Marshal.load(file)
+#        puts state.pretty_inspect
         state['definitions'].each do |type, defs|
           defs.each do |definition, mod|
             add_definition type, definition, mod unless modules_to_exclude.include? mod
@@ -139,8 +171,8 @@ module PuppetDeptool
     end
 
     def generate_state
-      FileUtils.mkdir_p(File.dirname(options(:state_file)))
-      File.open(options(:state_file), 'w') do |file|
+      FileUtils.mkdir_p(File.dirname(options[:state_file]))
+      File.open(options[:state_file], 'w') do |file|
         file.truncate(0)
         file.write(Marshal.dump({
           'definitions' => @definitions,
@@ -149,13 +181,36 @@ module PuppetDeptool
       end
     end
 
+    def validate_state
+      raise '--validate-state specified but no control repo configured' if @control_repo.nil?
+      info "Validating state file"
+      env = @control_repo.current_environment
+      puppetfile = R10K::Puppetfile.new(@control_repo.path)
+      puppetfile.load!
+      puppetfile.modules.each do |mod|
+        info "Checking Puppetfile module #{mod.name}"
+        next if options[:rescan_listed_modules] && options[:scan_modules].include?(mod.name)
+        state_ref = get_module(mod.name).ref
+        target_ref = if mod.is_a? R10K::Module::Git
+                       mod.repo.resolve(mod.desired_ref)
+                     elsif mod.is_a? R10K::Module::Forge
+                       mod.expected_version
+                     else
+                       raise "Unknown R10K module type #{mod}"
+                     end
+        if state_ref != target_ref
+          warn "State file module ref #{state_ref} does not match Puppetfile ref #{target_ref}"
+        end
+      end
+    end
+
     def load_known_warnings
-      return unless File.exist? options(:known_warnings_file)
-      info "Loading known warnings from #{options(:known_warnings_file)}"
+      return unless !@control_repo.nil? && File.exist?(options[:known_warnings_file])
+      info "Loading known warnings from #{options[:known_warnings_file]}"
       dsl = DSL.new(@known_warnings)
       begin
-        contents = File.read(options(:known_warnings_file))
-        dsl.instance_eval contents, options(:known_warnings_file)
+        contents = File.read(options[:known_warnings_file])
+        dsl.instance_eval contents, options[:known_warnings_file]
       rescue ArgumentError => e
         STDERR.puts "Error while parsing known warnings: #{e}"
         exit 1
@@ -163,8 +218,12 @@ module PuppetDeptool
     end
 
     def generate_known_warnings
-      FileUtils.mkdir_p(File.dirname(options(:known_warnings_file)))
-      File.open(options(:known_warnings_file), 'w') do |file|
+      unless Util.is_control_repo?(@basedir)
+        warn "--generate-warnings-file is only valid for control repositories"
+        return
+      end
+      FileUtils.mkdir_p(File.dirname(options[:known_warnings_file]))
+      File.open(options[:known_warnings_file], 'w') do |file|
         file.truncate(0)
         @found_warnings.each do |type, warnings|
           warnings.each do |warning|
@@ -186,13 +245,9 @@ module PuppetDeptool
       return true if @known_warnings[warning_type].any? { |known| warning == known }
     end
 
-    def options(option)
-      raise "Unknown option #{option}" unless @options.key? option
-      @options[option]
-    end
-
     def collect_builtins
       return unless @builtin_types.empty?
+      info "Loading built-in types and functions"
       Puppet::Type.loadall
       Puppet::Type.eachtype do |type|
         @builtin_types << type
@@ -223,6 +278,15 @@ module PuppetDeptool
       @modules[modname] = data
     end
 
+    def create_tmp_modulepath(modules)
+      raise "#{__method__} requires an array of modules to link" unless modules.is_a? Array
+      tmpdir = Dir.mktmpdir('modules')
+      modules.each do |mod|
+        FileUtils.symlink(mod.path, File.join(tmpdir, mod.name))
+      end
+      tmpdir
+    end
+
     def add_definition(type, name, source = @current_module.name, ignore_dup = false)
       name = name.to_s.sub(%r{^::}, '')
       raise "Invalid definition type #{type}" unless @definitions.key? type
@@ -241,7 +305,7 @@ module PuppetDeptool
 
     def parse_file(file)
       debug "Parsing #{file}"
-      @current_file = Pathname.new(file).relative_path_from(@envdir_pn).to_s
+      @current_file = Pathname.new(file).relative_path_from(@env_pn).to_s
       @literal_strings = []
       @qualified_names = []
       results = @parser.parse_file(file)
@@ -256,22 +320,23 @@ module PuppetDeptool
     end
 
     def scan
-      return if options(:use_generated_state) && options(:scan_modules).empty?
-      modules_to_scan = if !options(:scan_modules).empty?
-                          options(:scan_modules)
-                        elsif options(:restrict_scan)
-                          options(:modules)
+      return if options[:use_generated_state] && options[:scan_modules].empty?
+      modules_to_scan = if !options[:scan_modules].empty?
+                          options[:scan_modules]
+                        elsif options[:restrict_scan]
+                          options[:modules]
                         else
                           []
                         end
       info modules_to_scan.empty? ?
         "Scanning all modules" :
         "Found modules_to_scan #{modules_to_scan}"
-      if (modules_to_scan.empty? && @envdir_mod.is_control_repo?) || modules_to_scan.include?(@envdir_mod.name)
-        scan_module(@envdir_mod)
+      unless @control_repo.nil?
+        control_mod = Module.new(path: @control_repo.path)
+        scan_module(control_mod) if modules_to_scan.empty? || modules_to_scan.include?(control_mod.name)
       end
-      @modulepath.each do |path|
-        debug "Processing modulepath #{path}"
+      options[:modulepath].each do |path|
+        info "Processing modulepath #{path}"
         Dir.entries(path).each do |name|
           debug "Processing modulepath file #{name}"
           next unless Puppet::Module.is_module_directory?(name, path)
@@ -284,7 +349,7 @@ module PuppetDeptool
           scan_module(mod)
         end
       end
-      unscanned_modules = modules_to_scan.empty? ? (options(:modules) - @modules.keys) : (modules_to_scan - @modules.keys)
+      unscanned_modules = modules_to_scan.empty? ? (options[:modules] - @modules.keys) : (modules_to_scan - @modules.keys)
       unless unscanned_modules.empty?
         warn "Failed to scan module(s) #{unscanned_modules.join ', '}"
       end
@@ -306,7 +371,7 @@ module PuppetDeptool
       end
       @current_module = mod
       @current_class = nil
-      info "Scanning module #{@current_module.name} (#{path})"
+      info "Scanning module #{mod.name} (#{path}) ref #{mod.ref}/version #{mod.version}"
 
       # Process .pp files
       pp_dirs = ['manifests', 'functions', 'types']
@@ -396,7 +461,7 @@ module PuppetDeptool
         end
       end
       @definitions[:variable].merge! inherited_variables
-      modules_to_resolve = options(:modules).empty? ? @modules.clone : @modules.select { |name, _mod| options(:modules).include? name }
+      modules_to_resolve = options[:modules].empty? ? @modules.clone : @modules.select { |name, _mod| options[:modules].include? name }
       resolved_modules = []
       until modules_to_resolve.empty?
         name, mod = modules_to_resolve.shift
@@ -435,7 +500,7 @@ module PuppetDeptool
         end
         # Remove self and builtin
         module_deps = (module_deps - ['builtin', name]).sort.uniq
-        unless CONTROL_MODULES.include?(name) || mod.is_control_repo?
+        unless CONTROL_MODULES.include?(name) || Util.is_control_repo?(mod.path)
           CONTROL_MODULES.each do |control_module|
             next unless module_deps.include? control_module
             next if warning_known? :control_dependency, name
@@ -444,7 +509,7 @@ module PuppetDeptool
         end
         info "Found #{name} dependencies #{module_deps}"
         resolved_modules << name
-        if options(:recurse)
+        if options[:recurse]
           module_deps.each do |dep|
             unless CONTROL_MODULES.include?(dep) || resolved_modules.include?(dep)
               modules_to_resolve[dep] = get_module(dep)
@@ -732,5 +797,144 @@ module PuppetDeptool
       end
     end
     # rubocop:enable Metrics/BlockNesting
+
+    class << self
+      def default_options
+        options = GLOBAL_DEFAULTS.dup
+        options[:modules] = []
+        options[:recurse] = false
+        options[:restrict_scan] = false
+        options[:scan_modules] = []
+        options[:basedir] = Dir.pwd
+        options[:controldir] = nil
+        options[:modulepath] = []
+        options[:environment] = nil
+        options[:deploy_environment] = false
+        options[:force] = false
+        options[:use_env_modulepath] = false
+        options[:list_dependencies] = false
+        options[:use_generated_state] = false
+        options[:validate_state] = false
+        options[:rescan_listed_modules] = false
+        options[:generate_state_file] = false
+        options[:generate_warnings_file] = false
+        options[:update_metadata] = false
+        options[:warnings_ok] = false
+        # These two defaults are normally derived after arg parsing in parse_args
+        options[:state_file] = options[:known_warnings_file] = nil
+        options
+      end
+
+      def parse_args
+        options = default_options
+        optparser = OptionParser.new do |opts|
+          PuppetDeptool.global_parser_options(opts, options)
+          opts.on('-m', '--module MODULE', 'Resolve dependenecies of MODULE. Can be specified multiple times.') do |mod|
+            options[:modules] << mod
+          end
+          opts.on('-R', '--recurse', 'Recursively determine module dependencies. Defaults to false.') do
+            options[:recurse] = true
+          end
+          opts.on('-r', '--restrict', 'Restrict scanned modules to modules specified with --module. Default false.') do
+            options[:restrict_scan] = true
+          end
+          opts.on('-s', '--scan MODULE', 'Add MODULE to list of modules to scan. Defaults to scan all modules if not specified.') do |scan|
+            options[:scan_modules] << scan
+          end
+          opts.on('-e', '--environment ENVIRONMENT', 'Environment to check dependencies against. Implies --use-generated-state.') do |envname|
+            options[:environment] = envname
+            options[:use_generated_state] = true
+          end
+          opts.on('-E', '--deploy-environment', 'Runs a full R10K deploy on controldir. Defaults to false.') do
+            options[:deploy_environment] = true
+          end
+          opts.on('-F', '--force', 'Overwrite local changes during deployment. Defaults to false.') do
+            options[:force] = true
+          end
+          opts.on('-c', '--controldir DIR', 'Set control repository directory to DIR.') do |controldir|
+            unless Dir.exist? controldir
+              warn "controldir #{controldir} does not exist"
+              exit 1
+            end
+            unless Util.is_control_repo?(controldir)
+              warn "controldir #{controldir} does not appear to be a control repository"
+              exit 1
+            end
+            options[:controldir] = File.expand_path(controldir)
+          end
+          opts.on('-b', '--basedir DIR', 'Set base directory to DIR. Defaults to current directory.') do |basedir|
+            unless Dir.exist? basedir
+              warn "basedir #{basedir} does not exist"
+              exit 1
+            end
+            options[:basedir] = File.expand_path(basedir)
+          end
+          opts.on('-p', '--modulepath DIR', 'Set environment modulepath. Can be specified multiple times. Defaults to environment.conf modulepath.') do |modulepath|
+            unless Dir.exist? modulepath
+              warn "modulepath #{modulepath} does not exist"
+              exit 1
+            end
+            options[:modulepath] << File.expand_path(modulepath)
+          end
+          opts.on('-P', '--use-env-modulepath', 'Prepend module paths specified with --modulepath to modulepath in environment.conf') do
+            options[:use_env_modulepath] = true
+          end
+          opts.on('-l', '--list-deps', 'Print resolved dependencies.') do
+            options[:list_dependencies] = true
+          end
+          opts.on('-f', '--state-file FILE', "Path to file containing parsed state. Implies --use-generated-state. Defaults to ${controldir}/#{PuppetDeptool::DEPTOOL_DIR}/state.") do |path|
+            options[:use_generated_state] = true
+            options[:state_file] = path
+          end
+          opts.on('-u', '--use-generated-state', 'Use generated state file instead of scanning. Only valid for control repositories. Defaults to false.') do
+            options[:use_generated_state] = true
+          end
+          opts.on('-V', '--validate-state', 'Validates versions used in generated state match Puppetfile. Implies --use-generated-state') do
+            options[:use_generated_state] = true
+            options[:validate_state] = true
+          end
+          opts.on('-S', '--rescan-listed-modules', 'Use generated state file but also rescan modules specified with --scan. Implies --use-generated-state. Defaults to false.') do
+            options[:rescan_listed_modules] = options[:use_generated_state] = true
+          end
+          opts.on('-g', '--generate-state-file', 'Generate state file. Only valid for control repositories.') do
+            options[:generate_state_file] = true
+          end
+          opts.on('-k', '--known-warnings FILE', "Path to file containing known warnings to ignore. Defaults to ${controldir}/#{PuppetDeptool::DEPTOOL_DIR}/known_warnings.") do |path|
+            options[:known_warnings_file] = path
+          end
+          opts.on('-G', '--generate-warnings-file', 'Generate known warnings file for all current warnings.') do
+            options[:generate_warnings_file] = true
+          end
+          opts.on('-M', '--update-metadata', 'Update metadata.json with resolved dependencies. Defaults to false.') do
+            options[:update_metadata] = true
+          end
+          opts.on('-w', '--warnings-ok', 'Return 0 exit code even if there are warnings. Defaults to false.') do
+            options[:warnings_ok] = true
+          end
+        end
+
+        begin
+          optparser.parse!
+        rescue => e
+          warn e
+          puts optparser
+          exit 1
+        end
+
+        unless ARGV.empty?
+          warn "unknown arguments: #{ARGV.join(', ')}"
+          puts optparser
+          exit 1
+        end
+
+        # Derived default options
+        unless options[:controldir].nil?
+          options[:state_file] ||= File.join(options[:controldir], PuppetDeptool::DEPTOOL_DIR, 'state')
+          options[:known_warnings_file] ||= File.join(options[:controldir], PuppetDeptool::DEPTOOL_DIR, 'known_warnings')
+        end
+
+        options
+      end
+    end
   end
 end

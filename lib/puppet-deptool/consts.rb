@@ -10,5 +10,16 @@ module PuppetDeptool
     }.freeze
     CONTROL_MODULES = ['role', 'profile'].freeze
     ENV_NAME = :parser
+    MODULE_NAME_PATTERN = %r{^([^-]+)[-/](.+)$}
+    GITHUB_BASE_URL = 'https://github.umn.edu/api/v3'.freeze
+    R10K_CONFIG_REPO = 'git@github.umn.edu:MSI-Puppet/r10k_config.git'.freeze
+    DEPTOOL_DIR = '.deptool'.freeze
+    GLOBAL_DEPTOOL_DIR = File.join(ENV['HOME'], DEPTOOL_DIR).freeze
+    DEPTOOL_CACHE = File.join(GLOBAL_DEPTOOL_DIR, 'cache').freeze
+    GLOBAL_DEFAULTS = {
+      verbose: false,
+      debug: false,
+      quiet: false,
+    }.freeze
   end
 end

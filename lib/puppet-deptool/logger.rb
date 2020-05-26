@@ -1,6 +1,5 @@
 module PuppetDeptool
   module Logger
-
     class << self; attr_accessor :debug, :verbose, :quiet; end
 
     def debug_write(message)
