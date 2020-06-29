@@ -1,6 +1,7 @@
 module PuppetDeptool
   module Consts
-    # :type is a QualifiedReference that can refer to a datatype or resource type
+    DEFAULT_ENVIRONMENT = 'persistent_systems_develop'.freeze
+    # :type is a QualifiedReference that can refer to a datatype, defined type, resource type, or type alias
     DEPENDENCY_TYPES = [:class, :function, :type, :provider, :resource_type, :variable].freeze
     DEFINITION_TYPES = [:class, :function, :function_3x, :datatype, :provider, :defined_type, :resource_type, :variable, :type_alias].freeze
     WARNING_TYPES = {
@@ -19,9 +20,7 @@ module PuppetDeptool
     GLOBAL_DEPTOOL_DIR = File.join(ENV['HOME'], DEPTOOL_DIR).freeze
     DEPTOOL_CACHE = File.join(GLOBAL_DEPTOOL_DIR, 'cache').freeze
     GLOBAL_DEFAULTS = {
-      verbose: false,
-      debug: false,
-      quiet: false,
+      verbose: 2,
     }.freeze
   end
 end

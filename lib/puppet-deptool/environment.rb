@@ -5,7 +5,7 @@ module PuppetDeptool
   class Environment < Base
     include Git
 
-    attr_accessor :control_repo, :branch, :puppetfile_path
+    attr_accessor :control_repo, :branch, :remote, :puppetfile_path
 
     def initialize(opts)
       super
@@ -16,6 +16,7 @@ module PuppetDeptool
       unless opts[:skip_check]
         raise "Invalid branch #{branch}" unless control_repo.branch_exists?(branch, path: path)
       end
+      @remote = opts[:remote] || 'origin'
       fetch_puppetfile
     end
 
@@ -34,21 +35,30 @@ module PuppetDeptool
     def fetch_puppetfile
       return @puppetfile_content unless @puppetfile_content.nil?
       @puppetfile_path = File.join(path, 'Puppetfile')
-      @puppetfile_content = git ['show', "#{branch}:Puppetfile"], path: path
+      ref = if current_branch(path: path) == branch
+              branch
+            else
+              "#{remote}/#{branch}"
+            end
+      @puppetfile_content = git ['show', "#{ref}:Puppetfile"], path: path
       debug "Found Puppetfile content:\n#{@puppetfile_content}"
       @puppetfile_content
     rescue GitError
-      raise "Control repo #{path} branch #{branch} does not contain a Puppetfile"
+      raise "Control repo #{path} branch #{ref} does not contain a Puppetfile"
     end
 
-    def deploy(clean: false, force: false)
-      checkout(branch, path: path, clean: clean)
-      R10K::Logging.level = if Logger.debug
-                              'DEBUG'
-                            elsif Logger.verbose
+    def deploy(force: false)
+      unless current_branch(path: path) == branch
+        raise "Environment repo #{path} current branch #{control_repo.current_branch} doesn't match target branch #{branch}"
+      end
+      R10K::Logging.level = if Logger.level >= 3
+                              'DEBUG2'
+                            elsif Logger.level >= 2
                               'INFO'
-                            else
+                            elsif Logger.level >= 1
                               'WARN'
+                            else
+                              'FATAL'
                             end
       R10K::Action::Puppetfile::Install.new({root: path, force: force}, nil).call
       prepare_envlink_targets

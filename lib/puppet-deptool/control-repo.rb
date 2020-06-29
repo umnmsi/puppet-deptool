@@ -35,6 +35,7 @@ module PuppetDeptool
     end
 
     def deploy_environment(name, clean: false)
+      checkout_environment(name, clean: clean)
       environment(name).deploy(clean: clean)
     end
 

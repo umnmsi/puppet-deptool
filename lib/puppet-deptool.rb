@@ -27,14 +27,14 @@ module PuppetDeptool
   end
 
   def self.global_parser_options(opts, options)
-    opts.on('-v', '--verbose', 'Enable verbose output.') do
-      options[:verbose] = true
+    opts.on('-v', '--verbose', 'Enable verbose output. Can be specified twice to increase verbosity.') do
+      options[:verbose] += 1
     end
-    opts.on('-d', '--debug', 'Enable debug output.') do
-      options[:debug] = true
+    opts.on('-t', '--silent', 'Disable all output.') do
+      options[:verbose] = 0
     end
-    opts.on('-q', '--quiet', 'Disable warning output.') do
-      options[:quiet] = true
+    opts.on('-q', '--quiet', 'Disable default output. Warnings still displayed.') do
+      options[:verbose] = 1
     end
   end
 end

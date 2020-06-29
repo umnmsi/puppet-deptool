@@ -15,7 +15,7 @@ module PuppetDeptool
       debug "Running `#{cmd}`"
       out, err, status = Open3.capture3(cmd)
       info err unless err.empty?
-      debug out
+      debug out unless out.empty?
       raise GitError, "git command `#{cmd}` exited with non-zero status #{status.exitstatus}" unless status.success?
       out
     end

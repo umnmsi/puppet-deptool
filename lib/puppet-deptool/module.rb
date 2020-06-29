@@ -67,7 +67,7 @@ module PuppetDeptool
         warn "Missing metadata file #{metadata_path}!" unless Util.warning_known?(:missing_metadata, name)
         return @metadata = { 'author' => 'msi', 'version' => '0.0.1' }
       end
-      info "Loading metadata from #{metadata_path}"
+      debug "Loading metadata from #{metadata_path}"
       raise "Unable to open metadata file #{metadata_path}!" unless File.readable?(metadata_path)
       @metadata = JSON.parse(File.read(metadata_path))
     end
