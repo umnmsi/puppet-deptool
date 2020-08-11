@@ -92,7 +92,7 @@ module PuppetDeptool
             end
             path = clone_or_update({ 'name' => "#{control_repo}_control", 'ssh_url' => info['remote'] })
             repo = PuppetDeptool.control_repo(path: path, prefix: control_repo)
-            repo.checkout_environment(environment)
+            repo.checkout_environment(environment, reset: true)
             return repo
           end
         end

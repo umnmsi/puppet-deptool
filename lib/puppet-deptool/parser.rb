@@ -190,7 +190,7 @@ module PuppetDeptool
     end
 
     def update_fixtures
-      GeneratePuppetfile::Bin.new(['-p', @control_repo.current_environment.puppetfile_path, '--fixtures-only', '--debug', *@dependencies]).run
+      GeneratePuppetfile::Bin.new(['-p', @control_repo.current_environment.puppetfile_path, '--fixtures-only', '--use-refs', '--modulename', @module.name, *@dependencies]).run
     end
 
     def load_state

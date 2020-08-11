@@ -67,7 +67,18 @@ module PuppetDeptool
       args = ['checkout', ref]
       args << '--force' if opts.delete(:force) == true
       git(args, opts)
-      git(['clean', '-ffdx'], opts) if opts[:clean]
+      if opts.delete(:reset) == true
+        opts[:remote] ||= 'origin'
+        reset_ref = if %r{/}.match?(ref)
+                      ref
+                    else
+                      "#{opts[:remote]}/#{ref}"
+                    end
+        args = ['reset', '--hard', reset_ref]
+        info "Performing hard reset to #{reset_ref}"
+        git(args, opts)
+      end
+      git(['clean', '-ffdx'], opts) if opts.delete(:clean) == true
     end
 
     class GitError < StandardError; end

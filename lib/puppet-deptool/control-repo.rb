@@ -26,17 +26,19 @@ module PuppetDeptool
     end
 
     def current_environment
-      @current_environment ||= branch_to_environment(current_branch(path: path))
+      branch = current_branch(path: path)
+      raise 'Failed to determine environment name: Control repo branch resolved to HEAD' if branch.eql?('HEAD')
+      @current_environment ||= branch_to_environment(branch)
     end
 
-    def checkout_environment(name, clean: false)
+    def checkout_environment(name, opts = {})
       @current_environment = environment(name)
-      checkout(@current_environment.branch, path: path, clean: clean)
+      checkout(@current_environment.branch, { path: path }.merge(opts))
     end
 
-    def deploy_environment(name, clean: false)
-      checkout_environment(name, clean: clean)
-      environment(name).deploy(clean: clean)
+    def deploy_environment(name, opts = {})
+      checkout_environment(name, opts)
+      environment(name).deploy(force: opts[:force])
     end
 
     def environments(filter: [], remote: 'origin')
