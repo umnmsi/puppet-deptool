@@ -9,7 +9,7 @@ module PuppetDeptool
   include Consts
 
   def self.parser(options: {}, parse_args: false)
-    options.merge!(Parser.parse_args) if parse_args
+    options = Parser.parse_args(options) if parse_args
     @parser = Parser.new(options)
   end
 

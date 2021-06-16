@@ -658,7 +658,7 @@ module PuppetDeptool
         end
         dependencies += module_deps
       end
-      @dependencies = dependencies.sort.uniq
+      @dependencies = (dependencies + options[:extra_dependencies] - [@module.name]).sort.uniq
     end
 
     # rubocop:disable Metrics/BlockNesting
@@ -986,6 +986,7 @@ module PuppetDeptool
       def default_options
         options = GLOBAL_DEFAULTS.dup
         options[:modules] = []
+        options[:extra_dependencies] = []
         options[:recurse] = false
         options[:restrict_scan] = false
         options[:scan_modules] = []
@@ -1010,8 +1011,8 @@ module PuppetDeptool
         options
       end
 
-      def parse_args
-        options = default_options
+      def parse_args(opts = {})
+        options = default_options.merge!(opts)
         optparser = OptionParser.new do |opts|
           PuppetDeptool.global_parser_options(opts, options)
           opts.on('-b', '--basedir DIR', 'Set base directory to DIR. Defaults to current directory.') do |basedir|
@@ -1098,6 +1099,9 @@ module PuppetDeptool
           end
           opts.on('-X', '--update-fixtures', 'Update .fixtures.yml with resolved dependencies. Defaults to false.') do
             options[:update_fixtures] = true
+          end
+          opts.on('-x', '--extra-dependencies MODULE', 'Additional modules to include in dependency list that are not detected by a scan.') do |mod|
+            options[:extra_dependencies] << mod
           end
         end
 

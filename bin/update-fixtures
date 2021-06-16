@@ -1,0 +1,24 @@
+#!/usr/bin/env ruby
+
+require 'puppet-deptool'
+
+parser = PuppetDeptool.parser(
+  options: {
+    environment: 'persistent_systems_develop',
+    modules: [PuppetDeptool.module(path: Dir.pwd).name],
+    rescan_listed_modules: true,
+    recurse: true,
+    update_fixtures: true,
+    use_generated_state: true,
+  },
+  parse_args: true,
+)
+options = parser.options
+parser.debug "Parsed options:\n#{options.pretty_inspect}"
+parser.deploy_environment if options[:deploy_environment]
+parser.load_known_warnings
+parser.load_state if options[:use_generated_state]
+parser.scan
+parser.resolve
+parser.update_fixtures if options[:update_fixtures]
+exit 1 if parser.warnings_encountered && options[:warnings_ok] == false
