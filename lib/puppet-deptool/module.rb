@@ -19,7 +19,7 @@ module PuppetDeptool
                   File.basename(path)
                 elsif File.exist?(metadata_path)
                   metadata['name'].sub(MODULE_NAME_PATTERN, '\2')
-                elsif File.exist?(File.join(path, 'manifests'))
+                elsif File.exist?(File.join(path, 'manifests')) || File.exist?(File.join(path, 'lib', 'puppet'))
                   File.basename(path).sub(MODULE_NAME_PATTERN, '\2')
                 else
                   ''
