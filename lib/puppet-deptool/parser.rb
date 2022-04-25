@@ -194,6 +194,7 @@ module PuppetDeptool
       if @module.trivial?
         flags.concat(['--modulepath', '..'])
       end
+      flags.concat(['--control_branch', @control_repo.current_branch])
       args = ['-p', @control_repo.current_environment.puppetfile_path, '--fixtures-only', '--use-refs', '--modulename', @module.name, *flags, *@dependencies]
       info 'Generating .fixtures.yml...'
       debug "  with args #{args}"
