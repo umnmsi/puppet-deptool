@@ -80,5 +80,17 @@ module PuppetDeptool
         file.write(JSON.pretty_generate(metadata))
       end
     end
+
+    def trivial?
+      return @trivial unless @trivial.nil?
+      @trivial = Dir.chdir(path) do
+        git(['rev-parse', '--show-toplevel']).chomp == File.dirname(path)
+      end
+    end
+
+    def control_repo?
+      return @control_repo unless @control_repo.nil?
+      @control_repo = Util.is_control_repo?(path)
+    end
   end
 end

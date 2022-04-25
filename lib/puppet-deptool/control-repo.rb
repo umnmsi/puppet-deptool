@@ -25,6 +25,10 @@ module PuppetDeptool
       branch_to_environment(name.sub(/^#{prefix}_/, ''))
     end
 
+    def current_branch(opts = {})
+      super({path: path}.merge(opts))
+    end
+
     def current_environment
       branch = current_branch(path: path)
       raise 'Failed to determine environment name: Control repo branch resolved to HEAD' if branch.eql?('HEAD')

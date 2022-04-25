@@ -190,7 +190,14 @@ module PuppetDeptool
     end
 
     def update_fixtures
-      GeneratePuppetfile::Bin.new(['-p', @control_repo.current_environment.puppetfile_path, '--fixtures-only', '--use-refs', '--modulename', @module.name, *@dependencies]).run
+      flags = []
+      if @module.trivial?
+        flags.concat(['--modulepath', '..'])
+      end
+      args = ['-p', @control_repo.current_environment.puppetfile_path, '--fixtures-only', '--use-refs', '--modulename', @module.name, *flags, *@dependencies]
+      info 'Generating .fixtures.yml...'
+      debug "  with args #{args}"
+      GeneratePuppetfile::Bin.new(args).run
     end
 
     def load_state
