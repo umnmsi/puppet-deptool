@@ -190,7 +190,11 @@ module PuppetDeptool
     end
 
     def update_fixtures
-      flags = []
+      flags = if Logger.level > 2
+                ['--debug']
+              else
+                ['--silent']
+              end
       if @module.trivial?
         flags.concat(['--modulepath', '..'])
       end
@@ -593,7 +597,7 @@ module PuppetDeptool
       resolved_modules = []
       until modules_to_resolve.empty?
         name, mod = modules_to_resolve.shift
-        info "Resolving module #{name}"
+        debug "Resolving module #{name}"
         module_deps = []
         mod.dependencies.each do |type, dependency_list|
           dependency_list.each do |dependency, sources|

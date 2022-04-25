@@ -51,11 +51,11 @@ module PuppetDeptool
       unless current_branch(path: path) == branch
         raise "Environment repo #{path} current branch #{control_repo.current_branch} doesn't match target branch #{branch}"
       end
-      R10K::Logging.level = if Logger.level >= 3
+      R10K::Logging.level = if Logger.level >= 4
                               'DEBUG2'
-                            elsif Logger.level >= 2
+                            elsif Logger.level >= 3
                               'INFO'
-                            elsif Logger.level >= 1
+                            elsif Logger.level >= 2
                               'WARN'
                             else
                               'FATAL'
