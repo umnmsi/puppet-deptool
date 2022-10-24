@@ -5,6 +5,7 @@ require 'fileutils'
 require 'generate_puppetfile'
 require 'pp'
 require 'json'
+require 'tempfile'
 require 'puppet-deptool/base'
 require 'puppet-deptool/warning_dsl'
 require 'puppet-deptool/module'
@@ -199,10 +200,22 @@ module PuppetDeptool
         flags.concat(['--modulepath', '..'])
       end
       flags.concat(['--control_branch', @control_repo.current_branch])
-      args = ['-p', @control_repo.current_environment.puppetfile_path, '--fixtures-only', '--use-refs', '--modulename', @module.name, *flags, *@dependencies]
-      info 'Generating .fixtures.yml...'
-      debug "  with args #{args}"
-      GeneratePuppetfile::Bin.new(args).run
+      puppetfile = Tempfile.new('Puppetfile')
+      begin
+        puppetfile.write(File.read(@control_repo.current_environment.puppetfile_path))
+      # Add shared_hieradata to temp Puppetfile
+        puppetfile.write("mod 'shared_hieradata',\n  :git => 'git@github.umn.edu:MSI-Puppet/shared_hieradata.git',\n  :branch => 'develop'\n")
+        puppetfile.close
+        args = ['-p', puppetfile.path, '--fixtures-only', '--use-refs', '--modulename', @module.name, *flags, *@dependencies]
+        info 'Generating .fixtures.yml...'
+        debug "  with args #{args}"
+        GeneratePuppetfile::Bin.new(args).run
+      rescue => e
+        warn "Failed to generate .fixtures.yml: #{e}"
+      ensure
+        puppetfile.close
+        puppetfile.unlink
+      end
     end
 
     def load_state
