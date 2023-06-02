@@ -24,6 +24,8 @@ end
 # Parses and resolves module dependencies
 module PuppetDeptool
   class Parser < Base
+    include Git
+
     attr_accessor :dependencies, :warnings_encountered
 
     def initialize(opts)
@@ -31,12 +33,20 @@ module PuppetDeptool
       opts = Parser.default_options.merge(opts)
       super(opts)
 
+      if Gem::Version.new(Puppet.version) < Gem::Version.new('7.0.0')
+        STDERR.puts red("check_dependencies requires Puppet 7 or greater, found #{Puppet.version}. Try running `export PDK_PUPPET_VERSION=7; pdk bundle update` and run again.")
+        exit(1)
+      end
+
       Puppet.settings[:environment] = ENV_NAME
       Puppet.settings[:vardir] = '/dev/null'
 
       @environment = Puppet::Node::Environment.create(ENV_NAME, [])
       @basedir = options[:basedir]
       @module = Module.new(path: @basedir)
+
+      options[:options_file] ||= File.join(@basedir, PuppetDeptool::DEPTOOL_DIR, 'options')
+      load_options
 
       validate_options
 
@@ -177,7 +187,7 @@ module PuppetDeptool
     end
 
     def update_metadata
-      mod_deps = dependencies.map do |dep|
+      mod_deps = (dependencies - ['shared_hieradata']).map do |dep|
         mod = get_module(dep)
         min_version = if @control_repo.nil?
                         mod.version
@@ -187,7 +197,30 @@ module PuppetDeptool
         max_version = "#{min_version.split('.')[0].to_i + 1}.0.0"
         { 'name' => "#{mod.author}-#{mod.name}", 'version_requirement' => ">= #{min_version} < #{max_version}" }
       end
-      @module.update_metadata!('dependencies' => mod_deps)
+      @module.update_metadata!(
+        'author' => 'msi',
+        'operatingsystem_support' => [
+          {
+            'operatingsystem' => 'CentOS',
+            'operatingsystemrelease' => [
+              '7'
+            ]
+          },
+          {
+            'operatingsystem' => 'Rocky',
+            'operatingsystemrelease' => [
+              '8'
+            ]
+          }
+        ],
+        'requirements' => [
+          {
+            'name' => 'puppet',
+            'version_requirement' => '>= 7.0.0 < 8.0.0'
+          }
+        ],
+        'dependencies' => mod_deps,
+      )
     end
 
     def update_fixtures
@@ -297,6 +330,30 @@ module PuppetDeptool
 
     def warning_known?(warning_type, *args)
       Util.warning_known?(warning_type, *args)
+    end
+
+    def load_options
+      return unless File.exist?(options[:options_file])
+      File.open(options[:options_file], 'r') do |file|
+        loaded_options = Marshal.load(file)
+        options[:extra_dependencies].concat(loaded_options[:extra_dependencies]) unless loaded_options[:extra_dependencies].nil?
+      end
+    end
+
+    def save_options
+      return if options[:extra_dependencies].empty?
+      debug "Saving options to #{options[:options_file]}"
+      FileUtils.mkdir_p(File.dirname(options[:options_file]))
+      File.open(options[:options_file], 'w') do |file|
+        options_hash = {
+          extra_dependencies: options[:extra_dependencies],
+        }
+        Marshal.dump(options_hash, file)
+      end
+      if git(['ls-files', options[:options_file]], path: @basedir).empty?
+        relative_path = Pathname.new(options[:options_file]).relative_path_from(Pathname.new(@basedir))
+        info "\nWARNING: #{relative_path} isn't tracked in git.\nBe sure to run `git add #{relative_path}`"
+      end
     end
 
     def collect_builtins
@@ -472,12 +529,17 @@ module PuppetDeptool
       functions.each { |function, _| add_definition :function_3x, function }
       Puppet::Parser::Functions::AnonymousModuleAdapter.clear(@environment)
 
+      # Create environment using full modulepath so dependencies can be autoloaded
+      environment = Puppet::Node::Environment.create(ENV_NAME, options[:modulepath])
+      environments = Puppet::Environments::StaticDirectory.new(ENV_NAME, @environment_path, environment)
+      Puppet.push_context(environments: environments, current_environment: environment)
+
       # Process 4x ruby functions and datatypes
       debug 'Loading ruby functions and datatypes'
       mod = Puppet::Module.new(@current_module.name, path, @environment)
       @environment.instance_variable_set(:@modules, [mod])
       loader = Puppet::Pops::Loader::ModuleLoaders::FileBased.new(@loaders.static_loader, @loaders, mod.name, mod.path, mod.name, [:func_4x, :datatype])
-      loader.private_loader = Puppet::Pops::Loader::DependencyLoader.new(loader, "#{mod.name} private", [loader])
+      loader.private_loader = Puppet::Pops::Loader::DependencyLoader.new(loader, "#{mod.name} private", [loader], environment)
       [:function, :datatype].each do |type|
         errors = []
         discover_type = if type == :datatype
@@ -494,11 +556,6 @@ module PuppetDeptool
         debug "Found #{type}s #{diff.map { |result| result.name }.sort.join(', ')}" unless diff.empty?
         diff.each { |result| add_definition type, result.name }
       end
-
-      # Create environment using full modulepath so dependencies can be autoloaded
-      environment = Puppet::Node::Environment.create(ENV_NAME, options[:modulepath])
-      environments = Puppet::Environments::StaticDirectory.new(ENV_NAME, @environment_path, environment)
-      Puppet.push_context(environments: environments, current_environment: environment)
 
       # Process custom types
       pattern = File.join(plugindir, 'puppet', 'type', '*.rb')
@@ -773,7 +830,6 @@ module PuppetDeptool
               Puppet::Pops::Model::ComparisonExpression,
               Puppet::Pops::Model::AttributeOperation,
               Puppet::Pops::Model::AccessExpression,
-              Puppet::Pops::Model::SubLocatedExpression,
               Puppet::Pops::Model::IfExpression,
               Puppet::Pops::Model::NamedAccessExpression,
               Puppet::Pops::Model::CallMethodExpression,
@@ -973,7 +1029,6 @@ module PuppetDeptool
             Puppet::Pops::Model::SelectorExpression,
             Puppet::Pops::Model::SelectorEntry,
             Puppet::Pops::Model::HeredocExpression,
-            Puppet::Pops::Model::SubLocatedExpression,
             Puppet::Pops::Model::AttributesOperation,
             Puppet::Pops::Model::TextExpression,
             Puppet::Pops::Model::ComparisonExpression,
@@ -1031,8 +1086,8 @@ module PuppetDeptool
         options[:update_metadata] = false
         options[:update_fixtures] = false
         options[:warnings_ok] = false
-        # These two defaults are normally derived after arg parsing in parse_args
-        options[:state_file] = options[:known_warnings_file] = nil
+        # These defaults are normally derived after arg parsing in parse_args
+        options[:state_file] = options[:known_warnings_file] = options[:options_file] = nil
         options
       end
 
@@ -1060,6 +1115,9 @@ module PuppetDeptool
           end
           opts.on('-d', '--deploy-environment', 'Runs a full R10K deploy on controldir. Defaults to false.') do
             options[:deploy_environment] = true
+          end
+          opts.on('--no-deploy-environment', 'Do not run R10K deploy on controldir. Defaults to true.') do
+            options[:deploy_environment] = false
           end
           opts.on('-e', '--environment ENVIRONMENT', 'Environment to check dependencies against. Implies --deploy-environment and --force.') do |envname|
             options[:environment] = envname

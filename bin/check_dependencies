@@ -16,4 +16,5 @@ parser.generate_known_warnings if options[:generate_warnings_file]
 parser.generate_state if options[:generate_state_file]
 parser.update_metadata if options[:update_metadata]
 parser.update_fixtures if options[:update_fixtures]
+parser.save_options
 exit 1 if parser.warnings_encountered && options[:warnings_ok] == false
