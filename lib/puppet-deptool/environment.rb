@@ -60,7 +60,7 @@ module PuppetDeptool
                             else
                               'FATAL'
                             end
-      R10K::Action::Puppetfile::Install.new({root: path, force: force, control_branch: branch}, nil).call
+      R10K::Action::Puppetfile::Install.new({root: path, force: force}, nil).call
       prepare_envlink_targets
     end
 
