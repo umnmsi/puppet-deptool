@@ -224,6 +224,14 @@ module PuppetDeptool
     end
 
     def update_fixtures
+      if @dependencies.nil? || @dependencies.empty?
+        info 'No external dependencies'
+        if File.exist?('.fixtures.yml')
+          info 'Removing existing .fixtures.yml file'
+          File.unlink('.fixtures.yml')
+        end
+        return
+      end
       flags = if Logger.level > 2
                 ['--debug']
               else
