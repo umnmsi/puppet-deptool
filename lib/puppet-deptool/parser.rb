@@ -344,7 +344,7 @@ module PuppetDeptool
       return unless File.exist?(options[:options_file])
       File.open(options[:options_file], 'r') do |file|
         loaded_options = Marshal.load(file)
-        options[:extra_dependencies].concat(loaded_options[:extra_dependencies]) unless loaded_options[:extra_dependencies].nil?
+        options[:extra_dependencies].concat(loaded_options[:extra_dependencies]).sort!.uniq! unless loaded_options[:extra_dependencies].nil?
       end
     end
 
@@ -354,7 +354,7 @@ module PuppetDeptool
       FileUtils.mkdir_p(File.dirname(options[:options_file]))
       File.open(options[:options_file], 'w') do |file|
         options_hash = {
-          extra_dependencies: options[:extra_dependencies],
+          extra_dependencies: options[:extra_dependencies].sort.uniq,
         }
         Marshal.dump(options_hash, file)
       end
