@@ -956,6 +956,7 @@ module PuppetDeptool
                 raise "Unknown create_resources/ensure_resource argument #{resource_type.class}" unless [
                   Puppet::Pops::Model::AccessExpression,
                   Puppet::Pops::Model::ConcatenatedString,
+                  Puppet::Pops::Model::VariableExpression,
                 ].include? resource_type.class
               end
             end
