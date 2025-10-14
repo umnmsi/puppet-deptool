@@ -497,7 +497,7 @@ module PuppetDeptool
 
     def scan_module(mod)
       path = mod.path
-      unless mod.name
+      if mod.name.eql?('')
         warn "#{path} doesn't appear to be a module directory. Skipping path."
         return
       end
