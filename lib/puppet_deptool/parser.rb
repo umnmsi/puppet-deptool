@@ -1002,7 +1002,7 @@ module PuppetDeptool
         when Puppet::Pops::Model::AccessExpression
           case result.left_expr
           when Puppet::Pops::Model::QualifiedReference, Puppet::Pops::Model::VariableExpression
-            result.each_key do |key|
+            result.keys.each do |key| # rubocop:disable Style/HashEachMethods
               case key
               when Puppet::Pops::Model::LiteralString
                 if result.left_expr.instance_of?(Puppet::Pops::Model::QualifiedReference)
