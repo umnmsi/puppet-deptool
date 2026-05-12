@@ -28,7 +28,7 @@ module PuppetDeptool
 
     def warn(message)
       @warnings_encountered = true
-      warn red message if Logger.level >= 1
+      $stderr.puts red message if Logger.level >= 1 # rubocop:disable Style/StderrPuts
     end
 
     # Enable printing red text
