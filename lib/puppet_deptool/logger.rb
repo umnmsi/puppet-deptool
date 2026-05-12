@@ -1,16 +1,17 @@
+# frozen_string_literal: true
+
 module PuppetDeptool
   module Logger
     class << self
-      def level=(level)
-        @level = level
-      end
+      attr_writer :level
+
       def level
         @level ||= 1
       end
     end
 
     def trace_write(message)
-      STDOUT.write message if Logger.level >= 4
+      $stdout.write message if Logger.level >= 4
     end
 
     def trace(message)
@@ -27,7 +28,7 @@ module PuppetDeptool
 
     def warn(message)
       @warnings_encountered = true
-      STDERR.puts red message if Logger.level >= 1
+      warn red message if Logger.level >= 1
     end
 
     # Enable printing red text

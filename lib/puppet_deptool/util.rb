@@ -1,6 +1,8 @@
-require 'puppet-deptool/consts'
-require 'puppet-deptool/logger'
-require 'puppet-deptool/git'
+# frozen_string_literal: true
+
+require 'puppet_deptool/consts'
+require 'puppet_deptool/logger'
+require 'puppet_deptool/git'
 
 module PuppetDeptool
   class Util
@@ -9,8 +11,8 @@ module PuppetDeptool
       include Git
       include Logger
 
-      @@known_warnings = Hash[WARNING_TYPES.map { |type, _| [type, []] }]
-      @@found_warnings = Hash[WARNING_TYPES.map { |type, _| [type, []] }]
+      @@known_warnings = WARNING_TYPES.to_h { |type, _| [type, []] }
+      @@found_warnings = WARNING_TYPES.to_h { |type, _| [type, []] }
 
       def known_warnings
         @@known_warnings
@@ -22,12 +24,13 @@ module PuppetDeptool
 
       def warning_known?(warning_type, *args)
         raise "Unknown warning type #{warning_type}" unless @@known_warnings.key? warning_type
-        warning = Hash.new
+
+        warning = {}
         WARNING_TYPES[warning_type].each_with_index do |attr, index|
           warning[attr] = args[index]
         end
         @@found_warnings[warning_type] << warning
-        return true if @@known_warnings[warning_type].any? { |known| warning == known }
+        true if @@known_warnings[warning_type].any? { |known| warning == known }
       end
 
       def github_control_repos
@@ -36,6 +39,7 @@ module PuppetDeptool
 
       def r10k_control_repos
         return @r10k_control_repos unless @r10k_control_repos.nil?
+
         @r10k_control_repos = r10k_config['sources'].select do |name, source|
           debug "Checking r10k repo #{name} / #{source}"
           if source['basedir'].eql?('/etc/puppetlabs/code/environments') && source['prefix'] === true
@@ -57,11 +61,12 @@ module PuppetDeptool
 
       def r10k_config
         return @r10k_config unless @r10k_config.nil?
+
         unless File.file? r10k_config_file
           raise "Failed to find r10k config #{r10k_config_file}"
           exit 1
         end
-        @r10k_config = YAML.load(File.read(r10k_config_file))
+        @r10k_config = YAML.load_file(r10k_config_file)
       end
 
       def envlink_cache_dir
@@ -74,27 +79,28 @@ module PuppetDeptool
 
       def envlink_config
         return @envlink_config unless @envlink_config.nil?
+
         unless File.file? envlink_config_file
           raise "Failed to find envlink config #{envlink_config_file}"
           exit 1
         end
-        @envlink_config = YAML.load(File.read(envlink_config_file))
+        @envlink_config = YAML.load_file(envlink_config_file)
       end
 
       def environment_to_control_repo(environment)
         r10k_control_repos.each do |control_repo, info|
           debug "Checking #{control_repo} against #{environment}"
-          if environment.match?(%r{^#{control_repo}_})
-            info "Mapped environment #{environment} to #{control_repo}_control. Cloning repo..."
-            unless info['remote'].match?(%r{#{control_repo}_control})
-              warn "Control repo URL #{info['remote']} doesn't match expected pattern '<name>_control'"
-              return nil
-            end
-            path = clone_or_update({ 'name' => "#{control_repo}_control", 'ssh_url' => info['remote'] })
-            repo = PuppetDeptool.control_repo(path: path, prefix: control_repo)
-            repo.checkout_environment(environment, reset: true)
-            return repo
+          next unless environment.match?(/^#{control_repo}_/)
+
+          info "Mapped environment #{environment} to #{control_repo}_control. Cloning repo..."
+          unless info['remote'].match?(/#{control_repo}_control/)
+            warn "Control repo URL #{info['remote']} doesn't match expected pattern '<name>_control'"
+            return nil
           end
+          path = clone_or_update({ 'name' => "#{control_repo}_control", 'ssh_url' => info['remote'] })
+          repo = PuppetDeptool.control_repo(path: path, prefix: control_repo)
+          repo.checkout_environment(environment, reset: true)
+          return repo
         end
         nil
       end
@@ -105,14 +111,18 @@ module PuppetDeptool
           debug "Comparing #{branch} to #{environment.name}"
           return branch if branch.match?(%r{/#{environment.name}$})
           return branch if link['map'].key?(environment.name) && branch.match?(%r{/#{link['map'][environment.name]}$})
+
           fallback_branch = branch if !link['fallback_branch'].nil? && branch.match?(%r{/#{link['fallback_branch']}$})
         end
         return fallback_branch unless fallback_branch.nil?
-        raise "No matching branch found for link #{link['link_name']} and no fallback branch defined" if link['fallback_branch'].nil?
+        if link['fallback_branch'].nil?
+          raise "No matching branch found for link #{link['link_name']} and no fallback branch defined"
+        end
+
         raise "No matching branch found for link #{link['link_name']} and fallback branch #{link['fallback_branch']} doesn't exist"
       end
 
-      def is_control_repo?(path)
+      def control_repo?(path)
         File.exist?(File.join(path, 'Puppetfile'))
       end
     end

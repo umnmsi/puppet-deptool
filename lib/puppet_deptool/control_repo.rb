@@ -1,5 +1,7 @@
-require 'puppet-deptool/base'
-require 'puppet-deptool/environment'
+# frozen_string_literal: true
+
+require 'puppet_deptool/base'
+require 'puppet_deptool/environment'
 require 'r10k/action/puppetfile/install'
 
 module PuppetDeptool
@@ -10,9 +12,11 @@ module PuppetDeptool
 
     def initialize(opts)
       super
-      raise "Required parameter :path missing" if opts[:path].nil?
+      raise 'Required parameter :path missing' if opts[:path].nil?
+
       @path = options[:path]
       raise "path #{path} does not exist" unless File.directory?(path)
+
       @modules = {}
       @prefix = opts[:prefix] || File.basename(path).sub('_control', '')
     end
@@ -26,12 +30,13 @@ module PuppetDeptool
     end
 
     def current_branch(opts = {})
-      super({path: path}.merge(opts))
+      super({ path: path }.merge(opts))
     end
 
     def current_environment
       branch = current_branch(path: path)
       raise 'Failed to determine environment name: Control repo branch resolved to HEAD' if branch.eql?('HEAD')
+
       @current_environment ||= branch_to_environment(branch)
     end
 
@@ -46,11 +51,12 @@ module PuppetDeptool
     end
 
     def environments(filter: [], remote: 'origin')
-      debug "Searching for branches#{filter.empty? ? '' : " matching #{filter}"}"
+      debug "Searching for branches#{" matching #{filter}" unless filter.empty?}"
       envs = []
       remote_branches(path: path, remote: remote).each do |ref|
         next if ref.eql?("#{remote}/HEAD")
-        next unless filter.empty? || filter.any? { |f| ref =~ %r{\b#{f}\b} }
+        next unless filter.empty? || filter.any? { |f| ref =~ /\b#{f}\b/ }
+
         debug "Processing branch #{ref}"
         envs << Environment.new(control_repo: self, branch: ref_to_branch(ref), skip_check: true)
       end
@@ -58,16 +64,17 @@ module PuppetDeptool
     end
 
     def environments_with_module(mod, filter: [], remote: 'origin')
-      debug "Searching for branches with module #{mod.name}#{filter.empty? ? '' : " matching #{filter}"}"
+      debug "Searching for branches with module #{mod.name}#{" matching #{filter}" unless filter.empty?}"
       environments(filter: filter, remote: remote).select do |env|
         mods = env.modules
         debug "Found modules #{mods.map { |m| m[:name] }}"
         mods.each do |m|
           debug "Comparing #{m} to #{mod}"
           next unless m[:name].eql?(mod.name)
+
           if m[:author].nil?
             warn "WARNING: Unable to compare module author for #{m[:name]} in #{env.name}. Update Puppetfile declaration to use '<author>-<name>' syntax."
-          elsif ! m[:author].eql?(mod.author)
+          elsif !m[:author].eql?(mod.author)
             next
           end
           true

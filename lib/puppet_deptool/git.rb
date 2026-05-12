@@ -1,3 +1,5 @@
+# frozen_string_literal: true
+
 require 'open3'
 
 module PuppetDeptool
@@ -17,6 +19,7 @@ module PuppetDeptool
       info err unless err.empty?
       debug out unless out.empty?
       raise GitError, "git command `#{cmd}` exited with non-zero status #{status.exitstatus}" unless status.success?
+
       out
     end
 
@@ -25,13 +28,14 @@ module PuppetDeptool
     end
 
     def current_commit(opts = {})
-      git(['rev-parse', 'HEAD'], opts).chomp
+      git(%w[rev-parse HEAD], opts).chomp
     end
 
     def remote_branches(opts = {})
       opts[:remote] ||= 'origin'
-      git(['for-each-ref', '--format', '"%(refname:short)"', "refs/remotes/#{opts[:remote]}"], opts).each_line.map do |ref|
-        ref.gsub(%r{"},'').chomp
+      git(['for-each-ref', '--format', '"%(refname:short)"', "refs/remotes/#{opts[:remote]}"],
+          opts).each_line.map do |ref|
+        ref.gsub('"', '').chomp
       end
     end
 
@@ -43,13 +47,14 @@ module PuppetDeptool
     end
 
     def ref_to_branch(ref)
-      ref.sub(%r{^.+/},'')
+      ref.sub(%r{^.+/}, '')
     end
 
     # expects repo hash { 'name' => <name>, 'ssh_url' => <ssh_url> }
     def clone_or_update(repo)
       cache_dir = File.join(PuppetDeptool::DEPTOOL_CACHE, repo['name'])
       return cache_dir if @@update_cache.key? cache_dir
+
       if File.directory? cache_dir
         info "Fetching updates for #{repo['name']} in #{cache_dir}"
         @current_path = cache_dir
@@ -63,7 +68,7 @@ module PuppetDeptool
     end
 
     def checkout(ref, opts)
-      info "Checking out #{ref}#{opts[:clean] ? ' and cleaning' : ''}"
+      info "Checking out #{ref}#{' and cleaning' if opts[:clean]}"
       args = ['checkout', ref]
       args << '--force' if opts.delete(:force) == true
       git(args, opts)

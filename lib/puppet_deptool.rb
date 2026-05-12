@@ -1,9 +1,11 @@
+# frozen_string_literal: true
+
 require 'optparse'
-require 'puppet-deptool/consts'
-require 'puppet-deptool/control-repo'
-require 'puppet-deptool/module'
-require 'puppet-deptool/parser'
-require 'puppet-deptool/scanner'
+require 'puppet_deptool/consts'
+require 'puppet_deptool/control_repo'
+require 'puppet_deptool/module'
+require 'puppet_deptool/parser'
+require 'puppet_deptool/scanner'
 
 module PuppetDeptool
   include Consts

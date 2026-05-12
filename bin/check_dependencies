@@ -1,6 +1,7 @@
 #!/usr/bin/env ruby
+# frozen_string_literal: true
 
-require 'puppet-deptool'
+require 'puppet_deptool'
 
 parser = PuppetDeptool.parser(parse_args: true)
 options = parser.options

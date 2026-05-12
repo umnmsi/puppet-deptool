@@ -1,9 +1,10 @@
-require 'puppet-deptool/base'
+# frozen_string_literal: true
+
+require 'puppet_deptool/base'
 
 # Class for parsing known warnings file
 module PuppetDeptool
   class WarningsDSL < Base
-
     def initialize(known_warnings)
       super
       @known_warnings = known_warnings

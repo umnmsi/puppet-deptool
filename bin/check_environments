@@ -1,7 +1,8 @@
 #!/usr/bin/env ruby
+# frozen_string_literal: true
 
-require 'puppet-deptool'
+require 'puppet_deptool'
 
 scanner = PuppetDeptool.scanner(parse_args: true)
-#puts scanner.r10k_config
+# puts scanner.r10k_config
 scanner.test_environments

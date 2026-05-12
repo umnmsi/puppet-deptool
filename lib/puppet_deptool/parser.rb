@@ -1,3 +1,5 @@
+# frozen_string_literal: true
+
 require 'puppet'
 require 'puppet/datatypes/impl/error'
 require 'find'
@@ -6,17 +8,20 @@ require 'generate_puppetfile'
 require 'pp'
 require 'json'
 require 'tempfile'
-require 'puppet-deptool/base'
-require 'puppet-deptool/warning_dsl'
-require 'puppet-deptool/module'
+require 'puppet_deptool/base'
+require 'puppet_deptool/warning_dsl'
+require 'puppet_deptool/module'
 require 'r10k/puppetfile'
 
-module Puppet::Environments
-  # Enable Puppet::Environments::StaticDirectory Loaders support
-  class StaticDirectory
-    def get_conf(name)
-      return nil unless name == @env_name
-      Puppet::Settings::EnvironmentConf.load_from(@env_dir, [])
+module Puppet
+  module Environments
+    # Enable Puppet::Environments::StaticDirectory Loaders support
+    class StaticDirectory
+      def get_conf(name)
+        return nil unless name == @env_name
+
+        Puppet::Settings::EnvironmentConf.load_from(@env_dir, [])
+      end
     end
   end
 end
@@ -31,15 +36,15 @@ module PuppetDeptool
     def initialize(opts)
       $stdout.sync = true
       opts = Parser.default_options.merge(opts)
-      super(opts)
+      super
 
       if Gem::Version.new(Puppet.version) < Gem::Version.new('7.0.0')
-        STDERR.puts red("check_dependencies requires Puppet 7 or greater, found #{Puppet.version}. Try running `export PDK_PUPPET_VERSION=7; pdk bundle update` and run again.")
+        warn red("check_dependencies requires Puppet 7 or greater, found #{Puppet.version}. Try running `export PDK_PUPPET_VERSION=7; pdk bundle update` and run again.")
         exit(1)
       end
 
       Puppet.settings[:environment] = ENV_NAME
-      Puppet.settings[:vardir] = '/dev/null'
+      Puppet.settings[:vardir] = File::NULL
 
       @environment = Puppet::Node::Environment.create(ENV_NAME, [])
       @basedir = options[:basedir]
@@ -53,8 +58,8 @@ module PuppetDeptool
       @env_pn = Pathname.new(@environment_path)
       @parser = Puppet::Pops::Parser::EvaluatingParser.singleton
       @loaders = Puppet::Pops::Loaders.new(@environment, true)
-      #@dumper = Puppet::Pops::Model::ModelTreeDumper.new
-      @definitions = Hash[DEFINITION_TYPES.map { |type| [type, {}] }]
+      # @dumper = Puppet::Pops::Model::ModelTreeDumper.new
+      @definitions = DEFINITION_TYPES.to_h { |type| [type, {}] }
       @inherits = {}
       @modules = {}
       @builtin_types = []
@@ -64,7 +69,7 @@ module PuppetDeptool
     end
 
     def validate_options
-      debug "Validating options"
+      debug 'Validating options'
       if @module.name.empty?
         warn "basedir #{@basedir} doesn't appear to be a valid module or control repo!"
         exit 1
@@ -73,14 +78,14 @@ module PuppetDeptool
         @control_repo = PuppetDeptool.control_repo(path: options[:controldir])
         @environment_path = options[:controldir]
         options[:use_env_modulepath] = true if options[:modulepath].empty?
-      elsif Util.is_control_repo?(@basedir)
-        info "Found control repository"
+      elsif Util.control_repo?(@basedir)
+        info 'Found control repository'
         @control_repo = PuppetDeptool.control_repo(path: @basedir)
         @environment_path = @basedir
         options[:use_env_modulepath] = true if options[:modulepath].empty?
       elsif options[:modulepath].empty? || options[:use_env_modulepath]
         if options[:modulepath].empty? && File.directory?('spec/fixtures/modules') && !options[:environment]
-          info "Found modules directory at spec/fixtures/modules. Path references will be relative to spec/fixtures directory."
+          info 'Found modules directory at spec/fixtures/modules. Path references will be relative to spec/fixtures directory.'
           @environment_path = File.expand_path('spec/fixtures')
           options[:modulepath] = [File.expand_path('spec/fixtures/modules')]
         else
@@ -89,7 +94,7 @@ module PuppetDeptool
             options[:environment] = DEFAULT_ENVIRONMENT
             options[:deploy_environment] = options[:force] = true
           end
-          unless @control_repo = Util.environment_to_control_repo(options[:environment])
+          unless (@control_repo = Util.environment_to_control_repo(options[:environment]))
             warn "Failed to clone environment #{options[:environment]}"
             exit 1
           end
@@ -98,20 +103,20 @@ module PuppetDeptool
         end
       end
       if @environment_path.nil?
-        warn "Failed to determine environment path. Check your control-dir, modulepath and environment parameters."
+        warn 'Failed to determine environment path. Check your control-dir, modulepath and environment parameters.'
         exit 1
       end
 
       info "Found environment_path #{@environment_path}"
 
-      [:use_generated_state, :deploy_environment, :update_fixtures, :validate_state].each do |option|
+      %i[use_generated_state deploy_environment update_fixtures validate_state].each do |option|
         if options[option] && @control_repo.nil?
           warn "--#{option.to_s.gsub('_', '-')} specified but no control repository found"
           exit 1
         end
       end
-      [:generate_warnings_file, :generate_state_file].each do |option|
-        if options[option] && ! Util.is_control_repo?(@basedir)
+      %i[generate_warnings_file generate_state_file].each do |option|
+        if options[option] && !Util.control_repo?(@basedir)
           warn "--#{option.to_s.gsub('_', '-')} is only valid for control repositories"
           exit 1
         end
@@ -128,7 +133,7 @@ module PuppetDeptool
           if options[:scan_modules].empty?
             options[:scan_modules] = [@module.name]
             # Add role/profile 'modules' if control repo
-            options[:scan_modules] += CONTROL_MODULES if Util.is_control_repo?(@basedir)
+            options[:scan_modules] += CONTROL_MODULES if Util.control_repo?(@basedir)
             options[:rescan_listed_modules] = true
           end
         else
@@ -139,7 +144,10 @@ module PuppetDeptool
         end
       end
 
-      options[:modulepath] = [create_tmp_modulepath([@module])] if options[:modulepath].empty? && !Util.is_control_repo?(@basedir)
+      if options[:modulepath].empty? && !Util.control_repo?(@basedir)
+        options[:modulepath] =
+          [create_tmp_modulepath([@module])]
+      end
 
       environments = Puppet::Environments::StaticDirectory.new(ENV_NAME, @environment_path, @environment)
       Puppet.push_context(environments: environments, current_environment: @environment)
@@ -147,7 +155,7 @@ module PuppetDeptool
 
       # Add environment.conf modulepath if requested
       if options[:modulepath].empty? || options[:use_env_modulepath]
-        info "Adding environment.conf modulepath to modulepath"
+        info 'Adding environment.conf modulepath to modulepath'
         options[:modulepath] = options[:modulepath].concat(Puppet
                            .settings
                            .value(:modulepath, Parser::ENV_NAME, true)
@@ -219,7 +227,7 @@ module PuppetDeptool
             'version_requirement' => '>= 7.0.0 < 8.0.0'
           }
         ],
-        'dependencies' => mod_deps,
+        'dependencies' => mod_deps
       )
     end
 
@@ -237,21 +245,20 @@ module PuppetDeptool
               else
                 ['--silent']
               end
-      if @module.trivial?
-        flags.concat(['--modulepath', '..'])
-      end
-      flags.concat(['--control_branch', @control_repo.current_branch])
+      flags.push('--modulepath', '..') if @module.trivial?
+      flags.push('--control_branch', @control_repo.current_branch)
       puppetfile = Tempfile.new('Puppetfile')
       begin
         puppetfile.write(File.read(@control_repo.current_environment.puppetfile_path))
-      # Add shared_hieradata to temp Puppetfile
+        # Add shared_hieradata to temp Puppetfile
         puppetfile.write("mod 'shared_hieradata',\n  :git => 'git@github.umn.edu:MSI-Puppet/shared_hieradata.git',\n  :branch => 'develop'\n")
         puppetfile.close
-        args = ['-p', puppetfile.path, '--fixtures-only', '--use-refs', '--modulename', @module.name, *flags, *@dependencies]
+        args = ['-p', puppetfile.path, '--fixtures-only', '--use-refs', '--modulename', @module.name, *flags,
+                *@dependencies]
         info 'Generating .fixtures.yml...'
         debug "  with args #{args}"
         GeneratePuppetfile::Bin.new(args).run
-      rescue => e
+      rescue StandardError => e
         warn "Failed to generate .fixtures.yml: #{e}"
       ensure
         puppetfile.close
@@ -266,13 +273,13 @@ module PuppetDeptool
         modules_to_exclude = ['builtin']
         modules_to_exclude += options[:scan_modules] if options[:rescan_listed_modules]
         state = Marshal.load(file)
-#        puts state.pretty_inspect
+        #        puts state.pretty_inspect
         state['definitions'].each do |type, defs|
           defs.each do |definition, mod|
             add_definition type, definition, mod unless modules_to_exclude.include? mod
           end
         end
-        @modules = state['modules'].reject { |mod, info| modules_to_exclude.include? mod }
+        @modules = state['modules'].reject { |mod, _info| modules_to_exclude.include? mod }
       end
     end
 
@@ -281,20 +288,21 @@ module PuppetDeptool
       File.open(options[:state_file], 'w') do |file|
         file.truncate(0)
         file.write(Marshal.dump({
-          'definitions' => @definitions,
-          'modules' => @modules,
-        }))
+                                  'definitions' => @definitions,
+                                  'modules' => @modules
+                                }))
       end
     end
 
     def validate_state
-      info "Validating state file"
-      env = @control_repo.current_environment
+      info 'Validating state file'
+      @control_repo.current_environment
       puppetfile = R10K::Puppetfile.new(@control_repo.path)
       puppetfile.load!
       puppetfile.modules.each do |mod|
         info "Checking Puppetfile module #{mod.name}"
         next if options[:rescan_listed_modules] && options[:scan_modules].include?(mod.name)
+
         state_ref = get_module(mod.name).ref
         target_ref = if mod.is_a? R10K::Module::Git
                        mod.repo.resolve(mod.desired_ref)
@@ -303,21 +311,20 @@ module PuppetDeptool
                      else
                        raise "Unknown R10K module type #{mod}"
                      end
-        if state_ref != target_ref
-          warn "State file module ref #{state_ref} does not match Puppetfile ref #{target_ref}"
-        end
+        warn "State file module ref #{state_ref} does not match Puppetfile ref #{target_ref}" if state_ref != target_ref
       end
     end
 
     def load_known_warnings
       return unless !@control_repo.nil? && File.exist?(options[:known_warnings_file])
+
       info "Loading known warnings from #{options[:known_warnings_file]}"
       dsl = WarningsDSL.new(Util.known_warnings)
       begin
         contents = File.read(options[:known_warnings_file])
         dsl.instance_eval contents, options[:known_warnings_file]
       rescue ArgumentError => e
-        STDERR.puts "Error while parsing known warnings: #{e}"
+        warn "Error while parsing known warnings: #{e}"
         exit 1
       end
     end
@@ -342,6 +349,7 @@ module PuppetDeptool
 
     def load_options
       return unless File.exist?(options[:options_file])
+
       File.open(options[:options_file], 'r') do |file|
         loaded_options = Marshal.load(file)
         options[:extra_dependencies].concat(loaded_options[:extra_dependencies]).sort!.uniq! unless loaded_options[:extra_dependencies].nil?
@@ -350,23 +358,25 @@ module PuppetDeptool
 
     def save_options
       return if options[:extra_dependencies].empty?
+
       debug "Saving options to #{options[:options_file]}"
       FileUtils.mkdir_p(File.dirname(options[:options_file]))
       File.open(options[:options_file], 'w') do |file|
         options_hash = {
-          extra_dependencies: options[:extra_dependencies].sort.uniq,
+          extra_dependencies: options[:extra_dependencies].sort.uniq
         }
         Marshal.dump(options_hash, file)
       end
-      if git(['ls-files', options[:options_file]], path: @basedir).empty?
-        relative_path = Pathname.new(options[:options_file]).relative_path_from(Pathname.new(@basedir))
-        info "\nWARNING: #{relative_path} isn't tracked in git.\nBe sure to run `git add #{relative_path}`"
-      end
+      return unless git(['ls-files', options[:options_file]], path: @basedir).empty?
+
+      relative_path = Pathname.new(options[:options_file]).relative_path_from(Pathname.new(@basedir))
+      info "\nWARNING: #{relative_path} isn't tracked in git.\nBe sure to run `git add #{relative_path}`"
     end
 
     def collect_builtins
       return unless @builtin_types.empty?
-      info "Loading built-in types, providers and functions"
+
+      info 'Loading built-in types, providers and functions'
       Puppet::Type.loadall
       Puppet::Type.eachtype do |type|
         @builtin_types << type
@@ -393,13 +403,14 @@ module PuppetDeptool
         name = File.basename(file, '.rb')
         add_definition :function, name, 'builtin'
       end
-      Puppet::Pops::Loader::StaticLoader::BUILTIN_ALIASES.keys.each do |type|
+      Puppet::Pops::Loader::StaticLoader::BUILTIN_ALIASES.each_key do |type|
         add_definition :type_alias, type.downcase, 'builtin'
       end
     end
 
     def get_module(modname)
       return @modules[modname] if @modules.key? modname
+
       raise "No module #{modname} found"
     end
 
@@ -409,6 +420,7 @@ module PuppetDeptool
 
     def create_tmp_modulepath(modules)
       raise "#{__method__} requires an array of modules to link" unless modules.is_a? Array
+
       tmpdir = Dir.mktmpdir('modules')
       modules.each do |mod|
         FileUtils.symlink(mod.path, File.join(tmpdir, mod.name))
@@ -418,19 +430,16 @@ module PuppetDeptool
 
     def add_definition(type, name, source = @current_module.name, ignore_dup = false)
       debug "Adding #{type} definition #{name} from #{source}:#{@current_file}"
-      name = name.to_s.sub(%r{^::}, '')
+      name = name.to_s.sub(/^::/, '')
       raise "Invalid definition type #{type}" unless @definitions.key? type
-      if @definitions[type].key?(name) && !ignore_dup
-        unless warning_known? :duplicate_definition, type, name, source
-          warn "#{type} #{name} (#{source}): Already defined in #{@definitions[type][name]}"
-        end
-      end
+
+      warn "#{type} #{name} (#{source}): Already defined in #{@definitions[type][name]}" if @definitions[type].key?(name) && !ignore_dup && !warning_known?(:duplicate_definition, type, name, source)
       @definitions[type][name] = source
     end
 
     def add_dependency(type, name, source = @current_module)
       debug "Adding #{type} dependency #{name} from #{source}:#{@current_file}"
-      name = name.to_s.sub(%r{^::}, '')
+      name = name.to_s.sub(/^::/, '')
       source.add_dependency(type, name, @current_file)
     end
 
@@ -453,6 +462,7 @@ module PuppetDeptool
     def scan
       collect_builtins
       return if options[:use_generated_state] && options[:scan_modules].empty?
+
       modules_to_scan = if !options[:scan_modules].empty?
                           options[:scan_modules]
                         elsif options[:restrict_scan]
@@ -460,9 +470,7 @@ module PuppetDeptool
                         else
                           []
                         end
-      info modules_to_scan.empty? ?
-        "Scanning all modules" :
-        "Found modules_to_scan #{modules_to_scan}"
+      info modules_to_scan.empty? ? 'Scanning all modules' : "Found modules_to_scan #{modules_to_scan}"
       unless @control_repo.nil?
         control_mod = Module.new(path: @control_repo.path)
         scan_module(control_mod) if modules_to_scan.empty? || modules_to_scan.include?(control_mod.name)
@@ -472,8 +480,10 @@ module PuppetDeptool
         Dir.entries(path).each do |name|
           debug "Processing modulepath file #{name}" unless ['.', '..'].include? name
           next unless Puppet::Module.is_module_directory?(name, path)
+
           mod = Module.new(path: File.join(path, name))
           next unless modules_to_scan.empty? || modules_to_scan.include?(mod.name)
+
           if @modules.include? mod.name
             info "Module #{mod.name} already processed. Skipping"
             next
@@ -482,9 +492,7 @@ module PuppetDeptool
         end
       end
       unscanned_modules = modules_to_scan.empty? ? (options[:modules] - @modules.keys) : (modules_to_scan - @modules.keys)
-      unless unscanned_modules.empty?
-        warn "Failed to scan module(s) #{unscanned_modules.join ', '}"
-      end
+      warn "Failed to scan module(s) #{unscanned_modules.join ', '}" unless unscanned_modules.empty?
       unless @unhandled_pops_types.empty?
         warn 'The following unknown Puppet::Pops types were encountered'
         warn @unhandled_pops_types.sort.uniq.pretty_inspect
@@ -506,12 +514,13 @@ module PuppetDeptool
       info "Scanning module #{mod.name} (#{path}) ref #{mod.ref}/version #{mod.version}"
 
       # Process .pp files
-      pp_dirs = ['manifests', 'functions', 'types']
+      pp_dirs = %w[manifests functions types]
       pp_dirs.each do |dir|
         pattern = File.join(path, dir, '**', '*.pp')
         debug "Searching Puppet #{dir} with pattern #{pattern}"
         Dir.glob(pattern) do |file|
           next if File.directory?(file)
+
           parse_file(file)
         end
       end
@@ -525,16 +534,14 @@ module PuppetDeptool
       pattern = File.join(plugindir, 'puppet', 'parser', 'functions', '*.rb')
       debug "Loading ruby custom 3x functions with pattern #{pattern}"
       Dir.glob(pattern).each do |file|
-        begin
-          debug "Loading #{file}"
-          Kernel.load file
-        rescue => e
-          warn "Failed to load #{file}: #{e.message} #{e.backtrace}"
-        end
+        debug "Loading #{file}"
+        Kernel.load file
+      rescue StandardError => e
+        warn "Failed to load #{file}: #{e.message} #{e.backtrace}"
       end
       functions = Puppet::Parser::Functions.environment_module(@environment).all_function_info
       debug "Found functions #{functions.keys.sort.join(', ')}" unless functions.empty?
-      functions.each { |function, _| add_definition :function_3x, function }
+      functions.each_key { |function| add_definition :function_3x, function }
       Puppet::Parser::Functions::AnonymousModuleAdapter.clear(@environment)
 
       # Create environment using full modulepath so dependencies can be autoloaded
@@ -546,9 +553,11 @@ module PuppetDeptool
       debug 'Loading ruby functions and datatypes'
       mod = Puppet::Module.new(@current_module.name, path, @environment)
       @environment.instance_variable_set(:@modules, [mod])
-      loader = Puppet::Pops::Loader::ModuleLoaders::FileBased.new(@loaders.static_loader, @loaders, mod.name, mod.path, mod.name, [:func_4x, :datatype])
-      loader.private_loader = Puppet::Pops::Loader::DependencyLoader.new(loader, "#{mod.name} private", [loader], environment)
-      [:function, :datatype].each do |type|
+      loader = Puppet::Pops::Loader::ModuleLoaders::FileBased.new(@loaders.static_loader, @loaders, mod.name, mod.path,
+                                                                  mod.name, %i[func_4x datatype])
+      loader.private_loader = Puppet::Pops::Loader::DependencyLoader.new(loader, "#{mod.name} private", [loader],
+                                                                         environment)
+      %i[function datatype].each do |type|
         errors = []
         discover_type = if type == :datatype
                           :type
@@ -561,7 +570,7 @@ module PuppetDeptool
         errors.each do |error|
           warn "Found #{type} error #{error}" unless warning_known? :type_error, type, error, source
         end
-        debug "Found #{type}s #{diff.map { |result| result.name }.sort.join(', ')}" unless diff.empty?
+        debug "Found #{type}s #{diff.map(&:name).sort.join(', ')}" unless diff.empty?
         diff.each { |result| add_definition type, result.name }
       end
 
@@ -569,8 +578,9 @@ module PuppetDeptool
       pattern = File.join(plugindir, 'puppet', 'type', '*.rb')
       debug "Loading ruby custom types with pattern #{pattern}"
       new_types = []
-      load_pattern(pattern, /puppet#{File::SEPARATOR}type#{File::SEPARATOR}(?<type>[^#{File::SEPARATOR}]+)\.rb$/) do |match|
-        if type = Puppet::Type.type(match[:type])
+      load_pattern(pattern,
+                   /puppet#{File::SEPARATOR}type#{File::SEPARATOR}(?<type>[^#{File::SEPARATOR}]+)\.rb$/) do |match|
+        if (type = Puppet::Type.type(match[:type]))
           new_types += [type.name]
           add_definition :resource_type, type.name
         else
@@ -584,7 +594,7 @@ module PuppetDeptool
       debug "Loading custom provider classes with pattern #{pattern}"
       new_provider_classes = []
       load_pattern(pattern, /puppet#{File::SEPARATOR}provider#{File::SEPARATOR}(?<provider>.*)\.rb$/) do |match|
-        if Puppet::Provider.constants(false).include? match[:provider].capitalize.to_sym
+        if Puppet::Provider.const_defined?(match[:provider].capitalize.to_sym, false)
           new_provider_classes += [match[:provider]]
           add_definition :provider, match[:provider]
         else
@@ -597,14 +607,16 @@ module PuppetDeptool
       pattern = File.join(plugindir, 'puppet', 'provider', '*', '*.rb')
       debug "Loading ruby custom providers with pattern #{pattern}"
       new_providers = []
-      load_pattern(pattern, /puppet#{File::SEPARATOR}provider#{File::SEPARATOR}(?<type>[^#{File::SEPARATOR}]+)#{File::SEPARATOR}(?<provider>.*)\.rb$/) do |match|
-        if type = Puppet::Type.type(match[:type])
-          if provider = type.provider(match[:provider])
+      load_pattern(pattern,
+                   /puppet#{File::SEPARATOR}provider#{File::SEPARATOR}(?<type>[^#{File::SEPARATOR}]+)#{File::SEPARATOR}(?<provider>.*)\.rb$/) do |match|
+        if (type = Puppet::Type.type(match[:type]))
+          if (provider = type.provider(match[:provider]))
             new_providers += ["#{type.name}/#{match[:provider]}"]
             add_definition :provider, "#{type.name}/#{match[:provider]}"
             add_dependency :resource_type, type.name
-            provider.singleton_class.ancestors.select {|a| a.is_a? Class}.map(&:to_s).each do |ancestor|
+            provider.singleton_class.ancestors.grep(Class).map(&:to_s).each do |ancestor|
               next if ancestor.eql?(provider.singleton_class.to_s)
+
               debug "Checking #{ancestor} for dependencies..."
               ancestor.match(/Puppet::Provider::(?<provider>\w+)/) do |match|
                 add_dependency :provider, match[:provider].downcase
@@ -613,7 +625,7 @@ module PuppetDeptool
                 add_dependency :provider, "#{match[:type].downcase}/#{match[:provider].downcase}"
               end
               ancestor.match(/Puppet::Type::(?<type>[^:]+)/) do |match|
-                add_dependency :resource_type, "#{match[:type].downcase}"
+                add_dependency :resource_type, match[:type].downcase.to_s
               end
             end
           else
@@ -634,44 +646,45 @@ module PuppetDeptool
 
     def load_pattern(file_pattern, match_pattern, &block)
       Dir.glob(file_pattern).each do |file|
-        begin
-          @current_file = file
-          if match = file.match(match_pattern)
-            if $LOADED_FEATURES.include? match[0] # pupppet < 6.0.0 uses relative paths, e.g. puppet/type/newtype.rb
-              debug "#{file} already loaded"
-            elsif $LOADED_FEATURES.include? file
-              debug "#{file} already loaded"
-            else
-              debug "Loading #{file}"
-              Kernel.load file
-            end
-            block.call(match)
+        @current_file = file
+        if (match = file.match(match_pattern))
+          if $LOADED_FEATURES.include? match[0] # pupppet < 6.0.0 uses relative paths, e.g. puppet/type/newtype.rb
+            debug "#{file} already loaded"
+          elsif $LOADED_FEATURES.include? file
+            debug "#{file} already loaded"
           else
-            warn "Failed to determine name from #{file} using pattern #{match_pattern}"
+            debug "Loading #{file}"
+            Kernel.load file
           end
-        rescue LoadError => e
-          warn "Failed to load #{file}: #{e.message}\n#{e.backtrace.pretty_inspect}"
-        rescue => e
-          warn "Failed to load #{file}: #{e.message}\n#{e.backtrace.pretty_inspect}"
+          block.call(match)
+        else
+          warn "Failed to determine name from #{file} using pattern #{match_pattern}"
         end
+      rescue LoadError => e
+        warn "Failed to load #{file}: #{e.message}\n#{e.backtrace.pretty_inspect}"
+      rescue StandardError => e
+        warn "Failed to load #{file}: #{e.message}\n#{e.backtrace.pretty_inspect}"
       end
     end
 
     def resolve
       raise 'No parsed modules found! Did you run `rake spec_prep` or `pdk test unit` first?' if @modules.empty?
-      info "Resolving dependencies"
+
+      info 'Resolving dependencies'
       dependencies = []
       # Process any inherited classes
       inherited_variables = {}
       @inherits.each do |child, parent|
         @definitions[:variable].map do |variable, mod|
-          if variable.start_with? "#{parent}::"
-            inherited_variables[variable.sub(parent, child)] = mod
-          end
+          inherited_variables[variable.sub(parent, child)] = mod if variable.start_with? "#{parent}::"
         end
       end
       @definitions[:variable].merge! inherited_variables
-      modules_to_resolve = options[:modules].empty? ? @modules.clone : @modules.select { |name, _mod| options[:modules].include? name }
+      modules_to_resolve = if options[:modules].empty?
+                             @modules.clone
+                           else
+                             @modules.slice(*options[:modules])
+                           end
       resolved_modules = []
       until modules_to_resolve.empty?
         name, mod = modules_to_resolve.shift
@@ -723,17 +736,21 @@ module PuppetDeptool
               debug "Found dependency #{module_deps.last} for #{type} #{dependency}"
               next
             end
-            unknown_warning_sources = sources.reject { |source| warning_known? :missing_definition, type, dependency, source }
+            unknown_warning_sources = sources.reject do |source|
+              warning_known? :missing_definition, type, dependency, source
+            end
             next if unknown_warning_sources.empty?
+
             warn "Failed to find #{type} #{dependency}. Sources #{unknown_warning_sources.join(', ')}"
           end
         end
         # Remove self and builtin
         module_deps = (module_deps - ['builtin', name]).sort.uniq
-        unless CONTROL_MODULES.include?(name) || Util.is_control_repo?(mod.path)
+        unless CONTROL_MODULES.include?(name) || Util.control_repo?(mod.path)
           CONTROL_MODULES.each do |control_module|
             next unless module_deps.include? control_module
             next if warning_known? :control_dependency, name
+
             warn "WARNING: Module #{name} depends on control repo module '#{control_module}'"
           end
         end
@@ -741,9 +758,7 @@ module PuppetDeptool
         resolved_modules << name
         if options[:recurse]
           module_deps.each do |dep|
-            unless CONTROL_MODULES.include?(dep) || resolved_modules.include?(dep)
-              modules_to_resolve[dep] = get_module(dep)
-            end
+            modules_to_resolve[dep] = get_module(dep) unless CONTROL_MODULES.include?(dep) || resolved_modules.include?(dep)
           end
         end
         dependencies += module_deps
@@ -753,7 +768,7 @@ module PuppetDeptool
 
     # rubocop:disable Metrics/BlockNesting
     def process_result(result, parents = [], indent = 0)
-      trace_write "%#{indent}sFound %s" % ['', result.class]
+      trace_write format("%#{indent}sFound %s", '', result.class)
       begin
         case result
         when Puppet::Pops::Model::Parameter
@@ -781,10 +796,10 @@ module PuppetDeptool
                 Puppet::Pops::Model::CollectExpression,
                 Puppet::Pops::Model::ResourceDefaultsExpression,
                 Puppet::Pops::Model::ResourceExpression,
-                Puppet::Pops::Model::ResourceOverrideExpression,
+                Puppet::Pops::Model::ResourceOverrideExpression
               ].include? parent.class
             end
-            if resource_index == nil
+            if resource_index.nil?
               warn 'Failed to find parent resource for provider attribute'
             else
               resource = parents.reverse[resource_index]
@@ -811,7 +826,7 @@ module PuppetDeptool
                 end
               else
                 raise "Unknown provider parent model #{type_result.class}: #{type_result}" unless [
-#                  Puppet::Pops::Model::AccessExpression, # Resource['file'] { '/tmp': }
+                  #                  Puppet::Pops::Model::AccessExpression, # Resource['file'] { '/tmp': }
                 ].include? type_result.class
               end
             end
@@ -840,12 +855,12 @@ module PuppetDeptool
               Puppet::Pops::Model::AccessExpression,
               Puppet::Pops::Model::IfExpression,
               Puppet::Pops::Model::NamedAccessExpression,
-              Puppet::Pops::Model::CallMethodExpression,
+              Puppet::Pops::Model::CallMethodExpression
             ].include? parent.class
           end
-          @literal_strings.reject! { |name| name.object_id == result.object_id }
+            @literal_strings.reject! { |name| name.equal?(result) }
           else
-            trace_write ' UNRESOLVED' unless @literal_strings.reject! { |name| name.object_id == result.object_id }
+            trace_write ' UNRESOLVED' unless @literal_strings.reject! { |name| name.equal?(result) }
           end
         when Puppet::Pops::Model::QualifiedName
           trace_write " '#{result.value}'"
@@ -857,12 +872,12 @@ module PuppetDeptool
               Puppet::Pops::Model::SelectorEntry,
               Puppet::Pops::Model::CollectExpression,
               Puppet::Pops::Model::CaseOption,
-              Puppet::Pops::Model::CallNamedFunctionExpression,
+              Puppet::Pops::Model::CallNamedFunctionExpression
             ].include? parent.class
           end
-          @qualified_names.reject! { |name| name.object_id == result.object_id }
+            @qualified_names.reject! { |name| name.equal?(result) }
           else
-            trace_write ' UNRESOLVED' unless @qualified_names.reject! { |name| name.object_id == result.object_id }
+            trace_write ' UNRESOLVED' unless @qualified_names.reject! { |name| name.equal?(result) }
           end
         when Puppet::Pops::Model::HostClassDefinition
           trace_write " '#{result.name}'"
@@ -888,22 +903,20 @@ module PuppetDeptool
           trace_write " #{result.name}"
           add_definition :defined_type, result.name
         when Puppet::Pops::Model::AssignmentExpression
-          unless result.left_expr.class == Puppet::Pops::Model::VariableExpression
-            raise "Unknown AssignmentExpression left_expr #{result.left_expr.class}"
-          end
+          raise "Unknown AssignmentExpression left_expr #{result.left_expr.class}" unless result.left_expr.instance_of?(Puppet::Pops::Model::VariableExpression)
+
           case result.left_expr.expr
           when Puppet::Pops::Model::QualifiedName
             unless @current_class.nil?
-              add_definition :variable, [@current_class, result.left_expr.expr.value].join('::'), @current_module.name, true
+              add_definition :variable, [@current_class, result.left_expr.expr.value].join('::'), @current_module.name,
+                             true
             end
             @qualified_names << result.left_expr.expr
           else
             raise "Unknown VariableExpression expr #{result.left_expr.expr.class}"
           end
         when Puppet::Pops::Model::ResourceDefaultsExpression
-          unless result.type_ref.class == Puppet::Pops::Model::QualifiedReference
-            raise "Unknown ResourceDefaultsExpression type_ref #{result.type_ref.class}"
-          end
+          raise "Unknown ResourceDefaultsExpression type_ref #{result.type_ref.class}" unless result.type_ref.instance_of?(Puppet::Pops::Model::QualifiedReference)
         when Puppet::Pops::Model::ResourceExpression # file { '/tmp': }
           case result.type_name
           when Puppet::Pops::Model::QualifiedName # file { '/tmp': }
@@ -912,29 +925,25 @@ module PuppetDeptool
             @qualified_names << result.type_name
           else
             raise "Unknown ResourceExpression type_name #{result.type_name.class}" unless [
-              Puppet::Pops::Model::AccessExpression, # Resource['file'] { '/tmp': }
+              Puppet::Pops::Model::AccessExpression # Resource['file'] { '/tmp': }
             ].include? result.type_name.class
           end
           result.bodies.each do |body|
             case body.title
             when Puppet::Pops::Model::LiteralString
               # Add body title to deps if class
-              if result.type_name.class == Puppet::Pops::Model::QualifiedName && result.type_name.value == 'class'
-                add_dependency :class, body.title.value.downcase
-              end
+              add_dependency :class, body.title.value.downcase if result.type_name.instance_of?(Puppet::Pops::Model::QualifiedName) && result.type_name.value == 'class'
               @literal_strings << body.title
             when Puppet::Pops::Model::QualifiedName
               @qualified_names << body.title
             end
           end
         when Puppet::Pops::Model::CallMethodExpression
-          unless result.functor_expr.class == Puppet::Pops::Model::NamedAccessExpression
-            raise "Unknown CallMethodExpression functor_expr #{result.functor_expr.class}"
-          end
+          raise "Unknown CallMethodExpression functor_expr #{result.functor_expr.class}" unless result.functor_expr.instance_of?(Puppet::Pops::Model::NamedAccessExpression)
+
           right_expr = result.functor_expr.right_expr
-          unless right_expr.class == Puppet::Pops::Model::QualifiedName
-            raise "Unknown NamedAccessExpression right_expr #{right_expr.class}"
-          end
+          raise "Unknown NamedAccessExpression right_expr #{right_expr.class}" unless right_expr.instance_of?(Puppet::Pops::Model::QualifiedName)
+
           add_dependency :function, right_expr.value
           @qualified_names << right_expr
         when Puppet::Pops::Model::CallNamedFunctionExpression
@@ -943,7 +952,7 @@ module PuppetDeptool
             trace_write " '#{result.functor_expr.value}'"
             add_dependency :function, result.functor_expr.value
             @qualified_names << result.functor_expr
-            if ['create_resources', 'ensure_resource'].include? result.functor_expr.value
+            if %w[create_resources ensure_resource].include? result.functor_expr.value
               resource_type = result.arguments[0]
               case resource_type
               when Puppet::Pops::Model::QualifiedName
@@ -956,7 +965,7 @@ module PuppetDeptool
                 raise "Unknown create_resources/ensure_resource argument #{resource_type.class}" unless [
                   Puppet::Pops::Model::AccessExpression,
                   Puppet::Pops::Model::ConcatenatedString,
-                  Puppet::Pops::Model::VariableExpression,
+                  Puppet::Pops::Model::VariableExpression
                 ].include? resource_type.class
               end
             end
@@ -965,7 +974,7 @@ module PuppetDeptool
           else
             raise "Unknown CallNamedFunctionExpression functor_expr #{result.functor_expr.class}"
           end
-          if ['include', 'require', 'contain'].include? result.functor_expr.value
+          if %w[include require contain].include? result.functor_expr.value
             result.arguments.each do |argument|
               case argument
               when Puppet::Pops::Model::QualifiedName
@@ -977,7 +986,7 @@ module PuppetDeptool
               else
                 raise "Unknown include/require/contain arg #{argument.class}" unless [
                   Puppet::Pops::Model::ConcatenatedString,
-                  Puppet::Pops::Model::VariableExpression,
+                  Puppet::Pops::Model::VariableExpression
                 ].include? argument.class
               end
             end
@@ -985,9 +994,7 @@ module PuppetDeptool
         when Puppet::Pops::Model::VariableExpression
           case result.expr
           when Puppet::Pops::Model::QualifiedName
-            if result.expr.value.match? %r{\w::}
-              add_dependency :variable, result.expr.value
-            end
+            add_dependency :variable, result.expr.value if result.expr.value.match?(/\w::/)
             @qualified_names << result.expr
           else
             raise "Unknown VariableExpression expr #{result.expr.class}"
@@ -995,10 +1002,10 @@ module PuppetDeptool
         when Puppet::Pops::Model::AccessExpression
           case result.left_expr
           when Puppet::Pops::Model::QualifiedReference, Puppet::Pops::Model::VariableExpression
-            result.keys.each do |key|
+            result.each_key do |key|
               case key
               when Puppet::Pops::Model::LiteralString
-                if result.left_expr.class == Puppet::Pops::Model::QualifiedReference
+                if result.left_expr.instance_of?(Puppet::Pops::Model::QualifiedReference)
                   if result.left_expr.value == 'class'
                     add_dependency :class, key.value.downcase
                   elsif result.left_expr.value == 'resource'
@@ -1007,16 +1014,14 @@ module PuppetDeptool
                 end
                 @literal_strings << key
               when Puppet::Pops::Model::QualifiedName
-                if result.left_expr.class == Puppet::Pops::Model::VariableExpression
-                  @qualified_names << key
-                end
+                @qualified_names << key if result.left_expr.instance_of?(Puppet::Pops::Model::VariableExpression)
               end
             end
           else
             raise "Unknown AccessExpression left_expr #{result.left_expr.class}" unless [
               Puppet::Pops::Model::AccessExpression,
               Puppet::Pops::Model::CallNamedFunctionExpression,
-              Puppet::Pops::Model::CallMethodExpression,
+              Puppet::Pops::Model::CallMethodExpression
             ].include?(result.left_expr.class)
           end
         else
@@ -1052,7 +1057,7 @@ module PuppetDeptool
             Puppet::Pops::Model::NodeDefinition,
             Puppet::Pops::Model::ResourceOverrideExpression,
             Puppet::Pops::Model::UnlessExpression,
-            Puppet::Pops::Parser::Locator::Locator19,
+            Puppet::Pops::Parser::Locator::Locator19
           ].include?(result.class)
             @unhandled_pops_types << result.class.to_s
             trace_write ' UNRESOLVED'
@@ -1061,7 +1066,7 @@ module PuppetDeptool
         # trace_write @dumper.dump(result)
         trace_write "\n"
         result._pcore_contents { |content| process_result content, parents + [result], indent + 2 }
-      rescue => e
+      rescue StandardError => e
         warn "Error while processing the following section of #{@current_file}:"
         warn result.locator.string[result.offset, result.length]
         warn e.message
@@ -1116,7 +1121,7 @@ module PuppetDeptool
               warn "controldir #{controldir} does not exist"
               exit 1
             end
-            unless Util.is_control_repo?(controldir)
+            unless Util.control_repo?(controldir)
               warn "controldir #{controldir} does not appear to be a control repository"
               exit 1
             end
@@ -1128,18 +1133,21 @@ module PuppetDeptool
           opts.on('--no-deploy-environment', 'Do not run R10K deploy on controldir. Defaults to true.') do
             options[:deploy_environment] = false
           end
-          opts.on('-e', '--environment ENVIRONMENT', 'Environment to check dependencies against. Implies --deploy-environment and --force.') do |envname|
+          opts.on('-e', '--environment ENVIRONMENT',
+                  'Environment to check dependencies against. Implies --deploy-environment and --force.') do |envname|
             options[:environment] = envname
             options[:deploy_environment] = options[:force] = true
           end
-          opts.on('-f', '--state-file FILE', "Path to file containing parsed state. Implies --use-generated-state. Defaults to ${controldir}/#{PuppetDeptool::DEPTOOL_DIR}/state.") do |path|
+          opts.on('-f', '--state-file FILE',
+                  "Path to file containing parsed state. Implies --use-generated-state. Defaults to ${controldir}/#{PuppetDeptool::DEPTOOL_DIR}/state.") do |path|
             options[:use_generated_state] = true
             options[:state_file] = path
           end
           opts.on('-g', '--generate-state-file', 'Generate state file. Only valid for control repositories.') do
             options[:generate_state_file] = true
           end
-          opts.on('-k', '--known-warnings FILE', "Path to file containing known warnings to ignore. Defaults to ${controldir}/#{PuppetDeptool::DEPTOOL_DIR}/known_warnings.") do |path|
+          opts.on('-k', '--known-warnings FILE',
+                  "Path to file containing known warnings to ignore. Defaults to ${controldir}/#{PuppetDeptool::DEPTOOL_DIR}/known_warnings.") do |path|
             options[:known_warnings_file] = path
           end
           opts.on('-l', '--list-deps', 'Print resolved dependencies.') do
@@ -1148,7 +1156,8 @@ module PuppetDeptool
           opts.on('-m', '--module MODULE', 'Resolve dependenecies of MODULE. Can be specified multiple times.') do |mod|
             options[:modules] << mod
           end
-          opts.on('-p', '--modulepath DIR', 'Set environment modulepath. Can be specified multiple times. Defaults to environment.conf modulepath.') do |modulepath|
+          opts.on('-p', '--modulepath DIR',
+                  'Set environment modulepath. Can be specified multiple times. Defaults to environment.conf modulepath.') do |modulepath|
             unless Dir.exist? modulepath
               warn "modulepath #{modulepath} does not exist"
               exit 1
@@ -1158,10 +1167,12 @@ module PuppetDeptool
           opts.on('-r', '--recurse', 'Recursively determine module dependencies. Defaults to false.') do
             options[:recurse] = true
           end
-          opts.on('-s', '--scan MODULE', 'Add MODULE to list of modules to scan. Defaults to scan all modules if not specified.') do |scan|
+          opts.on('-s', '--scan MODULE',
+                  'Add MODULE to list of modules to scan. Defaults to scan all modules if not specified.') do |scan|
             options[:scan_modules] << scan
           end
-          opts.on('-u', '--use-generated-state', 'Use generated state file instead of scanning. Only valid if --basedir is control repository or --control-dir/--environment are specified. Defaults to false.') do
+          opts.on('-u', '--use-generated-state',
+                  'Use generated state file instead of scanning. Only valid if --basedir is control repository or --control-dir/--environment are specified. Defaults to false.') do
             options[:use_generated_state] = true
           end
           opts.on('-w', '--warnings-ok', 'Return 0 exit code even if there are warnings. Defaults to false.') do
@@ -1176,30 +1187,34 @@ module PuppetDeptool
           opts.on('-M', '--update-metadata', 'Update metadata.json with resolved dependencies. Defaults to false.') do
             options[:update_metadata] = true
           end
-          opts.on('-P', '--use-env-modulepath', 'Prepend module paths specified with --modulepath to modulepath in environment.conf') do
+          opts.on('-P', '--use-env-modulepath',
+                  'Prepend module paths specified with --modulepath to modulepath in environment.conf') do
             options[:use_env_modulepath] = true
           end
           opts.on('-R', '--restrict', 'Restrict scanned modules to modules specified with --module. Default false.') do
             options[:restrict_scan] = true
           end
-          opts.on('-S', '--rescan-listed-modules', 'Use generated state file but also rescan modules specified with --scan. Implies --use-generated-state. Defaults to false.') do
+          opts.on('-S', '--rescan-listed-modules',
+                  'Use generated state file but also rescan modules specified with --scan. Implies --use-generated-state. Defaults to false.') do
             options[:rescan_listed_modules] = options[:use_generated_state] = true
           end
-          opts.on('-V', '--validate-state', 'Validates versions used in generated state match Puppetfile. Implies --use-generated-state') do
+          opts.on('-V', '--validate-state',
+                  'Validates versions used in generated state match Puppetfile. Implies --use-generated-state') do
             options[:use_generated_state] = true
             options[:validate_state] = true
           end
           opts.on('-X', '--update-fixtures', 'Update .fixtures.yml with resolved dependencies. Defaults to false.') do
             options[:update_fixtures] = true
           end
-          opts.on('-x', '--extra-dependencies MODULE', 'Additional modules to include in dependency list that are not detected by a scan.') do |mod|
+          opts.on('-x', '--extra-dependencies MODULE',
+                  'Additional modules to include in dependency list that are not detected by a scan.') do |mod|
             options[:extra_dependencies] << mod
           end
         end
 
         begin
           optparser.parse!
-        rescue => e
+        rescue StandardError => e
           warn e
           puts optparser
           exit 1

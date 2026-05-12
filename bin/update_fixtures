@@ -1,6 +1,7 @@
 #!/usr/bin/env ruby
+# frozen_string_literal: true
 
-require 'puppet-deptool'
+require 'puppet_deptool'
 
 parser = PuppetDeptool.parser(
   options: {
@@ -9,9 +10,9 @@ parser = PuppetDeptool.parser(
     rescan_listed_modules: true,
     recurse: true,
     update_fixtures: true,
-    use_generated_state: true,
+    use_generated_state: true
   },
-  parse_args: true,
+  parse_args: true
 )
 options = parser.options
 parser.debug "Parsed options:\n#{options.pretty_inspect}"

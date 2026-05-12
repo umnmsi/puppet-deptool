@@ -1,7 +1,9 @@
-require 'puppet-deptool/base'
-require 'puppet-deptool/control-repo'
-require 'puppet-deptool/github'
-require 'puppet-deptool/module'
+# frozen_string_literal: true
+
+require 'puppet_deptool/base'
+require 'puppet_deptool/control_repo'
+require 'puppet_deptool/github'
+require 'puppet_deptool/module'
 
 module PuppetDeptool
   class Scanner < Base
@@ -9,22 +11,22 @@ module PuppetDeptool
 
     def initialize(opts)
       opts = Scanner.default_options.merge(opts)
-      super(opts)
-      if options[:control_repo].empty?
-        if builtin_control_repos.empty?
-          warn 'No control repo directory specified and no built-in repos configured'
-          exit 1
-        end
-        @options[:control_repo] = builtin_control_repos
+      super
+      return unless options[:control_repo].empty?
+
+      if builtin_control_repos.empty?
+        warn 'No control repo directory specified and no built-in repos configured'
+        exit 1
       end
+      @options[:control_repo] = builtin_control_repos
     end
 
     def mod
-      @module ||= Module.new(path: options[:module])
+      @mod ||= Module.new(path: options[:module])
     end
 
     def find_environments
-      info "Finding matching environments"
+      info 'Finding matching environments'
       environments = control_repos.map do |control_repo|
         info "Processing control repo #{control_repo}"
         control_repo.environments_with_module(mod, branch_filter)
@@ -54,7 +56,7 @@ module PuppetDeptool
 
     def branch_filter
       if options[:branch_filter].empty?
-        ['production', 'develop']
+        %w[production develop]
       else
         options[:branch_filter]
       end
@@ -62,12 +64,15 @@ module PuppetDeptool
 
     def builtin_control_repos
       return @builtin_control_repos unless @builtin_control_repos.nil?
-      extra_r10k_control_repos = Util.r10k_control_repos.keys - Util.github_control_repos.map { |r| r['environment_prefix'] }
+
+      extra_r10k_control_repos = Util.r10k_control_repos.keys - Util.github_control_repos.map do |r|
+        r['environment_prefix']
+      end
       unless extra_r10k_control_repos.empty?
         warn "WARNING: Found r10k control repo(s) that didn't match github search: #{extra_r10k_control_repos}"
       end
       @builtin_control_repos = Util.github_control_repos.map do |repo|
-        repo_path = clone_or_update(repo)
+        clone_or_update(repo)
       end
     end
 
@@ -78,10 +83,10 @@ module PuppetDeptool
     class << self
       def default_options
         GLOBAL_DEFAULTS.dup.merge({
-          control_repo: [],
-          module: File.expand_path(Dir.pwd),
-          branch_filter: [],
-        })
+                                    control_repo: [],
+                                    module: File.expand_path(Dir.pwd),
+                                    branch_filter: []
+                                  })
       end
 
       def parse_args
@@ -89,7 +94,8 @@ module PuppetDeptool
 
         optparser = OptionParser.new do |opts|
           PuppetDeptool.global_parser_options(opts, options)
-          opts.on('-c', '--control-repo PATH', 'Path to control repository. Can be specified multiple times. If unspecified, all known control repos will be cloned and checked.') do |control_repo|
+          opts.on('-c', '--control_repo PATH',
+                  'Path to control repository. Can be specified multiple times. If unspecified, all known control repos will be cloned and checked.') do |control_repo|
             unless Dir.exist? control_repo
               warn "Control repo directory #{control_repo} does not exist"
               exit 1
@@ -103,14 +109,15 @@ module PuppetDeptool
             end
             options[:module] = File.expand_path(mod)
           end
-          opts.on('-b', '--branch-filter FILTER', 'Control repo branch to check for matching module. Can be specified more than once. Defaults to [\'production\', \'develop\'].') do |filter|
+          opts.on('-b', '--branch-filter FILTER',
+                  'Control repo branch to check for matching module. Can be specified more than once. Defaults to [\'production\', \'develop\'].') do |filter|
             options[:branch_filter] << filter
           end
         end
 
         begin
           optparser.parse!
-        rescue => e
+        rescue StandardError => e
           warn e
           puts optparser
           exit 1

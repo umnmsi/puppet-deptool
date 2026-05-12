@@ -1,4 +1,6 @@
-require 'puppet-deptool/base'
+# frozen_string_literal: true
+
+require 'puppet_deptool/base'
 require 'r10k/action/puppetfile/install'
 
 module PuppetDeptool
@@ -9,13 +11,14 @@ module PuppetDeptool
 
     def initialize(opts)
       super
-      raise "Required parameter :control_repo missing" if opts[:control_repo].nil?
+      raise 'Required parameter :control_repo missing' if opts[:control_repo].nil?
+
       @control_repo = options[:control_repo]
-      raise "Required parameter :branch missing" if opts[:branch].nil?
+      raise 'Required parameter :branch missing' if opts[:branch].nil?
+
       @branch = options[:branch]
-      unless opts[:skip_check]
-        raise "Invalid branch #{branch}" unless control_repo.branch_exists?(branch, path: path)
-      end
+      raise "Invalid branch #{branch}" if !opts[:skip_check] && !control_repo.branch_exists?(branch, path: path)
+
       @remote = opts[:remote] || 'origin'
       fetch_puppetfile
     end
@@ -34,6 +37,7 @@ module PuppetDeptool
 
     def fetch_puppetfile
       return @puppetfile_content unless @puppetfile_content.nil?
+
       @puppetfile_path = File.join(path, 'Puppetfile')
       ref = if current_branch(path: path) == branch
               branch
@@ -51,6 +55,7 @@ module PuppetDeptool
       unless current_branch(path: path) == branch
         raise "Environment repo #{path} current branch #{control_repo.current_branch} doesn't match target branch #{branch}"
       end
+
       R10K::Logging.level = if Logger.level >= 4
                               'DEBUG2'
                             elsif Logger.level >= 3
@@ -60,12 +65,13 @@ module PuppetDeptool
                             else
                               'FATAL'
                             end
-      R10K::Action::Puppetfile::Install.new({root: path, force: force}, nil).call
+      R10K::Action::Puppetfile::Install.new({ root: path, force: force }, nil).call
       prepare_envlink_targets
     end
 
     def modules
       return @modules unless @modules.nil?
+
       puppetfile = Puppetfile.new
       puppetfile.instance_eval(@puppetfile_content, @puppetfile_path)
       @modules = puppetfile.modules
@@ -79,16 +85,16 @@ module PuppetDeptool
     end
 
     def prepare_envlink_targets
-      unless source = Util.r10k_control_repos[prefix]
+      unless (source = Util.r10k_control_repos[prefix])
         warn "WARNING: Failed to find r10k config for control repo #{prefix}"
       end
-      unless links = Util.envlink_config['links'][prefix]
+      unless (links = Util.envlink_config['links'][prefix])
         warn "WARNING: Failed to find envlink config for control repo #{prefix}"
         links = []
       end
       debug "Found source #{source}, links #{links}"
       links.each do |link|
-        unless link_source = Util.r10k_config['sources'][link['r10k_source']]
+        unless (link_source = Util.r10k_config['sources'][link['r10k_source']])
           warn "WARNING: Failed to find r10k config for envlink link #{link['link_name']}"
           next
         end
@@ -120,10 +126,9 @@ module PuppetDeptool
     end
 
     def to_s
-      @modules.map {|mod| "#{mod[:name]} #{mod[:version]}" }.join(' ')
+      @modules.map { |mod| "#{mod[:name]} #{mod[:version]}" }.join(' ')
     end
 
-    def method_missing(method, *args)
-    end
+    def method_missing(method, *args); end
   end
 end
