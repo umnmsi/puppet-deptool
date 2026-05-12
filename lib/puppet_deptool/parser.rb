@@ -457,6 +457,8 @@ module PuppetDeptool
       @qualified_names.each do |qualified_name|
         warn "Unresolved qualified name in #{file}: '#{qualified_name}'"
       end
+    rescue Exception => e
+      warn "Failed to parse #{file}: #{e.message} #{e.backtrace}"
     end
 
     def scan
@@ -536,7 +538,7 @@ module PuppetDeptool
       Dir.glob(pattern).each do |file|
         debug "Loading #{file}"
         Kernel.load file
-      rescue StandardError => e
+      rescue Exception => e
         warn "Failed to load #{file}: #{e.message} #{e.backtrace}"
       end
       functions = Puppet::Parser::Functions.environment_module(@environment).all_function_info
@@ -572,6 +574,8 @@ module PuppetDeptool
         end
         debug "Found #{type}s #{diff.map(&:name).sort.join(', ')}" unless diff.empty?
         diff.each { |result| add_definition type, result.name }
+      rescue Exception => e
+        warn "Failed to discover #{type} for module #{mod}: #{e.message} #{e.backtrace}"
       end
 
       # Process custom types
