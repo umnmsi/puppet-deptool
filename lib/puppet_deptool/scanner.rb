@@ -100,12 +100,12 @@ module PuppetDeptool
             end
             options[:control_repo] << File.expand_path(control_repo)
           end
-          opts.on('-m', '--module', 'Set path to module. Defaults to working directory.') do |mod|
-            unless Dir.exist? mod
-              warn "Module directory #{mod} does not exist"
+          opts.on('-m', '--module', 'Set path to module. Defaults to working directory.') do |modpath|
+            unless Dir.exist? modpath
+              warn "Module directory #{modpath} does not exist"
               exit 1
             end
-            options[:module] = File.expand_path(mod)
+            options[:module] = File.expand_path(modpath)
           end
           opts.on('-b', '--branch-filter FILTER',
                   'Control repo branch to check for matching module. Can be specified more than once. Defaults to [\'production\', \'develop\'].') do |filter|
