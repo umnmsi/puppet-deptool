@@ -1160,6 +1160,9 @@ module PuppetDeptool
           opts.on('-m', '--module MODULE', 'Resolve dependenecies of MODULE. Can be specified multiple times.') do |mod|
             options[:modules] << mod
           end
+          opts.on('-o', '--options-file FILE', "Path to options file. Defaults to #{PuppetDeptool::DEPTOOL_DIR}/options.") do |file|
+            options[:options_file] = File.expand_path(file)
+          end
           opts.on('-p', '--modulepath DIR',
                   'Set environment modulepath. Can be specified multiple times. Defaults to environment.conf modulepath.') do |modulepath|
             unless Dir.exist? modulepath
