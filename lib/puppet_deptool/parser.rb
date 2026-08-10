@@ -103,7 +103,7 @@ module PuppetDeptool
         end
       end
       if @environment_path.nil?
-        warn 'Failed to determine environment path. Check your control-dir, modulepath and environment parameters.'
+        warn 'Failed to determine environment path. Check your controldir, modulepath and environment parameters.'
         exit 1
       end
 
@@ -1176,7 +1176,7 @@ module PuppetDeptool
             options[:scan_modules] << scan
           end
           opts.on('-u', '--use-generated-state',
-                  'Use generated state file instead of scanning. Only valid if --basedir is control repository or --control-dir/--environment are specified. Defaults to false.') do
+                  'Use generated state file instead of scanning. Only valid if --basedir is control repository or --controldir/--environment are specified. Defaults to false.') do
             options[:use_generated_state] = true
           end
           opts.on('-w', '--warnings-ok', 'Return 0 exit code even if there are warnings. Defaults to false.') do
