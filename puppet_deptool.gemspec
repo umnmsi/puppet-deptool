@@ -7,7 +7,10 @@ Gem::Specification.new do |s|
   s.authors = ['Nick Bertrand']
   s.summary = 'Tool for working with puppet control repo and module dependencies'
   s.executables = %w[update_fixtures check_dependencies check_environments]
+  s.add_dependency 'ffi'
+  s.add_dependency 'generate-puppetfile'
   s.add_dependency 'openvox'
   s.add_dependency 'r10k'
+  s.add_dependency 'syslog'
   s.metadata['rubygems_mfa_required'] = 'true'
 end

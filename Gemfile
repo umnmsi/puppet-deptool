@@ -2,9 +2,10 @@
 
 source 'https://rubygems.org'
 
-gem 'ffi'
-gem 'generate-puppetfile'
-gem 'openvox'
-gem 'r10k'
-gem 'rubocop'
-gem 'rubocop-rspec'
+gemspec
+
+group :development, :test do
+  gem 'rspec'
+  gem 'rubocop'
+  gem 'rubocop-rspec'
+end
