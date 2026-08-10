@@ -273,7 +273,7 @@ module PuppetDeptool
         modules_to_exclude = ['builtin']
         modules_to_exclude += options[:scan_modules] if options[:rescan_listed_modules]
         state = Marshal.load(file)
-        #        puts state.pretty_inspect
+        # puts state.pretty_inspect
         state['definitions'].each do |type, defs|
           defs.each do |definition, mod|
             add_definition type, definition, mod unless modules_to_exclude.include? mod
@@ -830,7 +830,7 @@ module PuppetDeptool
                 end
               else
                 raise "Unknown provider parent model #{type_result.class}: #{type_result}" unless [
-                  #                  Puppet::Pops::Model::AccessExpression, # Resource['file'] { '/tmp': }
+                  # Puppet::Pops::Model::AccessExpression, # Resource['file'] { '/tmp': }
                 ].include? type_result.class
               end
             end

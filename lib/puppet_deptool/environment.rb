@@ -52,9 +52,7 @@ module PuppetDeptool
     end
 
     def deploy(force: false)
-      unless current_branch(path: path) == branch
-        raise "Environment repo #{path} current branch #{control_repo.current_branch} doesn't match target branch #{branch}"
-      end
+      raise "Environment repo #{path} current branch #{control_repo.current_branch} doesn't match target branch #{branch}" unless current_branch(path: path) == branch
 
       R10K::Logging.level = if Logger.level >= 4
                               'DEBUG2'

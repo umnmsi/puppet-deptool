@@ -68,9 +68,7 @@ module PuppetDeptool
       extra_r10k_control_repos = Util.r10k_control_repos.keys - Util.github_control_repos.map do |r|
         r['environment_prefix']
       end
-      unless extra_r10k_control_repos.empty?
-        warn "WARNING: Found r10k control repo(s) that didn't match github search: #{extra_r10k_control_repos}"
-      end
+      warn "WARNING: Found r10k control repo(s) that didn't match github search: #{extra_r10k_control_repos}" unless extra_r10k_control_repos.empty?
       @builtin_control_repos = Util.github_control_repos.map do |repo|
         clone_or_update(repo)
       end

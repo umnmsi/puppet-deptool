@@ -6,7 +6,8 @@ module PuppetDeptool
   class Module < Base
     include Git
 
-    attr_accessor :name, :path, :metadata_path, :dependencies
+    attr_accessor :path, :metadata_path, :dependencies
+    attr_writer :name
 
     def initialize(opts)
       super

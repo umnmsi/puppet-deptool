@@ -62,10 +62,8 @@ module PuppetDeptool
       def r10k_config
         return @r10k_config unless @r10k_config.nil?
 
-        unless File.file? r10k_config_file
-          raise "Failed to find r10k config #{r10k_config_file}"
-          exit 1
-        end
+        raise "Failed to find r10k config #{r10k_config_file}" unless File.file? r10k_config_file
+
         @r10k_config = YAML.load_file(r10k_config_file)
       end
 
@@ -80,10 +78,8 @@ module PuppetDeptool
       def envlink_config
         return @envlink_config unless @envlink_config.nil?
 
-        unless File.file? envlink_config_file
-          raise "Failed to find envlink config #{envlink_config_file}"
-          exit 1
-        end
+        raise "Failed to find envlink config #{envlink_config_file}" unless File.file? envlink_config_file
+
         @envlink_config = YAML.load_file(envlink_config_file)
       end
 
@@ -115,9 +111,7 @@ module PuppetDeptool
           fallback_branch = branch if !link['fallback_branch'].nil? && branch.match?(%r{/#{link['fallback_branch']}$})
         end
         return fallback_branch unless fallback_branch.nil?
-        if link['fallback_branch'].nil?
-          raise "No matching branch found for link #{link['link_name']} and no fallback branch defined"
-        end
+        raise "No matching branch found for link #{link['link_name']} and no fallback branch defined" if link['fallback_branch'].nil?
 
         raise "No matching branch found for link #{link['link_name']} and fallback branch #{link['fallback_branch']} doesn't exist"
       end

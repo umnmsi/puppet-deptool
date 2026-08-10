@@ -23,7 +23,7 @@ module PuppetDeptool
         end
         unless missing_args.empty?
           source = caller_locations(1).first
-          line = IO.readlines(source.absolute_path)[source.lineno - 1, 1][0].gsub(\%r{\\n},'')
+          line = IO.readlines(source.absolute_path)[source.lineno - 1, 1][0].gsub(%r{\\n},'') # rubocop:disable Style/RedundantStringEscape
           raise ArgumentError.new("#{type} missing argument(s) \#{missing_args.join(', ')}: \#{source.path}:\#{source.lineno}: \#{line}")
         end
         @known_warnings[:#{type}] << { #{attrs.map { |attr| "#{attr}: kwargs[:#{attr}]" }.join(', ')} }
