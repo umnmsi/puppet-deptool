@@ -29,9 +29,9 @@ module PuppetDeptool
         end
         num = 0
         max = 5
-        print "github.umn.edu Username: "
+        print "github.com Username: "
         username = gets.chomp
-        print "gihub.umn.edu Password: "
+        print "github.com Password: "
         password = STDIN.noecho(&:gets).chomp
         puts ""
         while num < max
@@ -41,7 +41,7 @@ module PuppetDeptool
           request.basic_auth username, password
           request.body = {
             'scopes'   => 'repo',
-            'note_url' => 'https://github.umn.edu/MSI-Puppet',
+            'note_url' => 'https://github.com/umn-msi-ops',
             'note'     => "deptool for #{%x[whoami].chomp}@#{%x[hostname -f].chomp}#{num > 1 ? " #{num}" : ""}"
           }.to_json
           request.content_type = 'application/json'
@@ -107,7 +107,7 @@ module PuppetDeptool
       end
 
       def repositories
-        res = req('/orgs/MSI-Puppet/repos?per_page=100')
+        res = req('/orgs/umn-msi-ops/repos?per_page=100')
         repos = parse_json(res)
         while url = next_page(res)
           debug "Found next page #{url}"

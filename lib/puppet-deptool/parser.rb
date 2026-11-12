@@ -245,7 +245,7 @@ module PuppetDeptool
       begin
         puppetfile.write(File.read(@control_repo.current_environment.puppetfile_path))
       # Add shared_hieradata to temp Puppetfile
-        puppetfile.write("mod 'shared_hieradata',\n  :git => 'git@github.umn.edu:MSI-Puppet/shared_hieradata.git',\n  :branch => 'develop'\n")
+        puppetfile.write("mod 'shared_hieradata',\n  :git => 'git@github.com:umn-msi-ops/shared_hieradata.git',\n  :branch => 'develop'\n")
         puppetfile.close
         args = ['-p', puppetfile.path, '--fixtures-only', '--use-refs', '--modulename', @module.name, *flags, *@dependencies]
         info 'Generating .fixtures.yml...'
