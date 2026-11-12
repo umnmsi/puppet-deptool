@@ -31,7 +31,7 @@ module PuppetDeptool
         max = 5
         print "github.com Username: "
         username = gets.chomp
-        print "gihub.umn.edu Password: "
+        print "github.com Password: "
         password = STDIN.noecho(&:gets).chomp
         puts ""
         while num < max
